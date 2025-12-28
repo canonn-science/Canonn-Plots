@@ -210,8 +210,12 @@
 
     <script>
         const CSV_PATH = 'neutron_stars_plots_cache.csv.gz';
-        const INITIAL_CHUNK_SIZE = 100;
-        const CHUNK_SIZE = 50000;
+        const INITIAL_CHUNK_SIZE = 50000;
+        const CHUNK_SIZE = 100000;
+        const BATCH_INTERVAL = 500; // Update every 500ms for more visible progress
+        const UPDATE_BATCH_SIZE = 50000; // Optimized: Larger batches = fewer updates
+
+        let dataWorker = null;
 
         const plots = [
             { x: 'solarRadius', y: 'rotationalPeriod', color: 'age', title: 'Radius vs Rotational Period (color=age)', xlabel: 'Solar Radius (R☉)', ylabel: 'Rotational Period', colorbar: 'Age', colorscale: 'viridis' },
@@ -226,6 +230,65 @@
         let csvHeaders = null;
         let csvComplete = false;
         let loadedTabs = new Set();
+        let workerMessageId = 0;
+        let workerCallbacks = new Map();
+
+        // Web Worker for data processing
+        function createDataWorker() {
+            const workerCode = `
+                self.onmessage = function(e) {
+                    const { type, data, fields, id } = e.data;
+                    
+                    if (type === 'process') {
+                        const processed = data.map(row => {
+                            const radiusKm = row.solarRadius * 696000;
+                            const periodSeconds = row.rotationalPeriod * 86400;
+                            const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
+                            return {
+                                ...row,
+                                tangentialVelocity: tangVel
+                            };
+                        });
+                        
+                        // Extract only needed fields to reduce transfer size
+                        const result = {};
+                        fields.forEach(field => {
+                            result[field] = processed.map(r => r[field]);
+                        });
+                        
+                        self.postMessage({ type: 'processed', data: result, id: id });
+                    }
+                };
+            `;
+
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const worker = new Worker(URL.createObjectURL(blob));
+
+            // Set up single message handler that routes to callbacks
+            worker.onmessage = (e) => {
+                const { id, type, data } = e.data;
+                if (type === 'processed' && workerCallbacks.has(id)) {
+                    workerCallbacks.get(id)(data);
+                    workerCallbacks.delete(id);
+                }
+            };
+
+            return worker;
+        }
+
+        // Helper to process data with worker
+        function processWithWorker(data, fields) {
+            return new Promise((resolve) => {
+                const id = workerMessageId++;
+                workerCallbacks.set(id, resolve);
+                dataWorker.postMessage({
+                    type: 'process',
+                    data: data,
+                    fields: fields,
+                    id: id
+                });
+            });
+        }
 
         function parseCSVLine(line, headers) {
             const values = [];
@@ -368,30 +431,25 @@
 
                 const plotDiv = document.getElementById('plot-' + tabIndex);
 
-                const processData = (rawData) => rawData.map(row => {
-                    const radiusKm = row.solarRadius * 696000;
-                    const periodSeconds = row.rotationalPeriod * 86400;
-                    const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
-                    return {
-                        ...row,
-                        tangentialVelocity: tangVel
-                    };
-                });
+                // Initialize worker if not exists
+                if (!dataWorker) {
+                    dataWorker = createDataWorker();
+                }
 
                 const xField = plotConfig.x;
                 const yField = plotConfig.y;
                 const colorField = plotConfig.color;
+                const neededFields = [xField, yField, colorField, 'system', 'tangentialVelocity'];
 
-                let processed = processData(data);
+                // Process initial chunk with worker
+                const initialData = data.slice(0, INITIAL_CHUNK_SIZE);
+                const processedInitial = await processWithWorker(initialData, neededFields);
 
-                const colorVals = processed.map(r => r[colorField]).filter(v => v !== null && v !== undefined && v > 0);
+                const colorVals = processedInitial[colorField].filter(v => v !== null && v !== undefined && v > 0);
                 let colorMin = Math.min(...colorVals);
                 let colorMax = Math.max(...colorVals);
 
-                const initialChunk = {};
-                for (const key of Object.keys(processed[0])) {
-                    initialChunk[key] = processed.slice(0, INITIAL_CHUNK_SIZE).map(r => r[key]);
-                }
+                const initialChunk = processedInitial;
 
                 const trace = {
                     x: initialChunk[xField],
@@ -443,38 +501,58 @@
                 let currentOffset = INITIAL_CHUNK_SIZE;
                 loadingDiv.innerHTML = '<div class="spinner"></div>Streaming data as it loads...';
 
-                // Update progress periodically
+                // Update progress periodically using requestIdleCallback
                 const progressInterval = setInterval(() => {
                     if (csvData.length > INITIAL_CHUNK_SIZE) {
-                        loadingDiv.innerHTML = '<div class="spinner"></div>Loaded ' + Math.min(currentOffset, csvData.length).toLocaleString() + ' of 3,318,091 points...';
+                        requestIdleCallback(() => {
+                            loadingDiv.innerHTML = '<div class="spinner"></div>Loaded ' + Math.min(currentOffset, csvData.length).toLocaleString() + ' of 3,318,091 points...';
+                        });
                     }
-                }, 500);
+                }, 1000); // Reduced frequency from 500ms to 1000ms
 
                 (async () => {
                     try {
                         let offset = INITIAL_CHUNK_SIZE;
                         let updateCount = 0;
                         let pendingData = { x: [], y: [], color: [], text: [] };
-                        const BATCH_INTERVAL = 250; // Update every 250ms instead of 50ms
-                        const UPDATE_BATCH_SIZE = 10000; // Smaller visual updates
+                        let isUpdating = false;
 
                         console.log('[Plot ' + tabIndex + '] Starting streaming loop, initial csvData.length:', csvData.length);
 
-                        // Batch updates using requestAnimationFrame
+                        // Optimized batch updates - non-blocking
                         let lastUpdateTime = performance.now();
-                        const flushPending = () => {
-                            if (pendingData.x.length === 0) return;
+                        const flushPending = async () => {
+                            if (pendingData.x.length === 0 || isUpdating) return;
 
-                            Plotly.extendTraces(plotDiv, {
-                                x: [pendingData.x],
-                                y: [pendingData.y],
-                                'marker.color': [pendingData.color],
-                                text: [pendingData.text]
-                            }, [0]);
+                            isUpdating = true;
+                            const dataToUpdate = { ...pendingData };
+                            const pointCount = pendingData.x.length;
+                            pendingData = { x: [], y: [], color: [], text: [] };
+
+                            const updateStart = performance.now();
+                            console.log('[Plot ' + tabIndex + '] Update #' + (updateCount + 1) + ': Adding ' + pointCount.toLocaleString() + ' points (total will be ~' + (offset + pointCount).toLocaleString() + ')');
+
+                            await new Promise(resolve => {
+                                Plotly.extendTraces(plotDiv, {
+                                    x: [dataToUpdate.x],
+                                    y: [dataToUpdate.y],
+                                    'marker.color': [dataToUpdate.color],
+                                    text: [dataToUpdate.text]
+                                }, [0]);
+                                requestAnimationFrame(resolve);
+                            });
+
+                            const updateDuration = performance.now() - updateStart;
+                            console.log('[Plot ' + tabIndex + '] Update #' + (updateCount + 1) + ' completed in ' + updateDuration.toFixed(1) + 'ms');
 
                             updateCount++;
-                            pendingData = { x: [], y: [], color: [], text: [] };
                             lastUpdateTime = performance.now();
+                            isUpdating = false;
+
+                            // Trigger next update if data accumulated while updating
+                            if (pendingData.x.length >= UPDATE_BATCH_SIZE) {
+                                flushPending();
+                            }
                         };
 
                         while (true) {
@@ -485,24 +563,22 @@
 
                             if (offset >= csvData.length) break;
 
-                            processed = processData(csvData);
-
                             const end = Math.min(offset + CHUNK_SIZE, csvData.length);
-                            const chunk = processed.slice(offset, end);
+                            const chunk = csvData.slice(offset, end);
 
                             if (chunk.length > 0) {
-                                // Add to pending batch
-                                pendingData.x.push(...chunk.map(r => r[xField]));
-                                pendingData.y.push(...chunk.map(r => r[yField]));
-                                pendingData.color.push(...chunk.map(r => r[colorField]));
-                                pendingData.text.push(...chunk.map(r => r.system || ''));
+                                // Process chunk in worker
+                                const processedChunk = await processWithWorker(chunk, neededFields);
 
-                                // Flush if batch size reached OR time elapsed
-                                const now = performance.now();
-                                if (pendingData.x.length >= UPDATE_BATCH_SIZE || (now - lastUpdateTime) >= BATCH_INTERVAL) {
-                                    flushPending();
-                                    // Yield to browser to stay responsive
-                                    await new Promise(resolve => requestAnimationFrame(resolve));
+                                // Add to pending batch
+                                pendingData.x.push(...processedChunk[xField]);
+                                pendingData.y.push(...processedChunk[yField]);
+                                pendingData.color.push(...processedChunk[colorField]);
+                                pendingData.text.push(...(processedChunk.system || []));
+
+                                // Trigger update when batch size reached (non-blocking)
+                                if (pendingData.x.length >= UPDATE_BATCH_SIZE && !isUpdating) {
+                                    flushPending(); // Fire and forget
                                 }
                             }
 
@@ -512,17 +588,26 @@
                                 console.log('[Plot ' + tabIndex + '] Processed ' + offset.toLocaleString() + ' rows');
                             }
 
-                            // Smaller delay between processing chunks
-                            await new Promise(resolve => setTimeout(resolve, 10));
+                            // Yield control to browser between chunks
+                            await new Promise(resolve => setTimeout(resolve, 5));
                         }
 
                         // Flush any remaining data
-                        flushPending();
+                        await flushPending();
+
+                        // Wait for any final update to complete
+                        while (isUpdating) {
+                            await new Promise(resolve => setTimeout(resolve, 50));
+                        }
 
                         console.log('[Plot ' + tabIndex + '] Streaming loop finished, final csvData.length:', csvData.length);
 
-                        loadingDiv.innerHTML = '';
                         clearInterval(progressInterval);
+
+                        // Calculate total points rendered
+                        const totalPoints = csvData.length;
+                        loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + totalPoints.toLocaleString() + ' data points</div>';
+
                         loadedTabs.add(tabIndex);
 
                         const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
