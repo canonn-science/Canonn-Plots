@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neutron Stars Analysis - 27658 stars</title>
+    <title>Neutron Stars Analysis</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
         * {
@@ -11,25 +12,30 @@
             padding: 0;
             box-sizing: border-box;
         }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: #1a1a1a;
             color: #e0e0e0;
         }
+
         .header {
             background: #2d2d2d;
             padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
+
         h1 {
             font-size: 24px;
             font-weight: 600;
         }
+
         .subtitle {
             color: #888;
             font-size: 14px;
             margin-top: 5px;
         }
+
         .tabs {
             display: flex;
             background: #2d2d2d;
@@ -37,6 +43,7 @@
             border-bottom: 1px solid #444;
             overflow-x: auto;
         }
+
         .tab {
             padding: 15px 25px;
             cursor: pointer;
@@ -49,56 +56,74 @@
             transition: all 0.2s;
             border-bottom: 3px solid transparent;
         }
+
         .tab:hover {
             color: #fff;
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
         }
+
         .tab.active {
             color: #4a9eff;
             border-bottom-color: #4a9eff;
         }
+
         .tab-content {
             display: none;
             padding: 20px;
             animation: fadeIn 0.3s;
         }
+
         .tab-content.active {
             display: block;
         }
+
         @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
         }
+
         .plot-container {
             background: #2d2d2d;
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
             overflow-x: auto;
         }
+
         .loading {
             text-align: center;
-            padding: 60px;
+            padding: 40px 20px;
             color: #888;
+            font-size: 13px;
         }
+
         .spinner {
+            display: inline-block;
             border: 3px solid #444;
             border-top: 3px solid #4a9eff;
             border-radius: 50%;
             width: 40px;
             height: 40px;
-            animation: spin 1s linear infinite;
+            animation: spin 0.8s linear infinite;
             margin: 0 auto 15px;
         }
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
-        svg {
-            max-width: 100%;
-            height: auto;
-        }
+
         .help {
             background: #2d2d2d;
             padding: 15px;
@@ -107,17 +132,19 @@
             font-size: 13px;
             color: #aaa;
         }
+
         .help strong {
             color: #4a9eff;
         }
     </style>
 </head>
+
 <body>
     <div class="header">
         <h1>Neutron Stars Analysis</h1>
-        <div class="subtitle">27658 neutron stars analyzed | Interactive controls: zoom, pan, box select</div>
+        <div class="subtitle">Interactive controls: zoom, pan, box select | Data loads on-demand with streaming</div>
     </div>
-    
+
     <div class="tabs">
         <button class="tab active" onclick="showTab(0)">Radius vs Rotational Period</button>
         <button class="tab" onclick="showTab(1)">Rotational Period vs Age</button>
@@ -126,137 +153,396 @@
         <button class="tab" onclick="showTab(4)">Temperature vs Age</button>
         <button class="tab" onclick="showTab(5)">Mass vs Radius</button>
     </div>
-    
+
     <div id="tab0" class="tab-content active">
-        <div class="help">
-            <strong>Controls:</strong> Zoom In/Out buttons, Reset view, Pan mode (drag to move), Box Select (drag to zoom to region), Mouse wheel to zoom at cursor
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
         </div>
         <div class="plot-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                Loading plot...
-            </div>
+            <div id="plot-0" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-0"></div>
         </div>
     </div>
-    
+
     <div id="tab1" class="tab-content">
-        <div class="help">
-            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | WebGL rendering for millions of points
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
         </div>
         <div class="plot-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                Loading plot...
-            </div>
+            <div id="plot-1" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-1"></div>
         </div>
     </div>
-    
+
     <div id="tab2" class="tab-content">
-        <div class="help">
-            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | WebGL rendering for millions of points
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
         </div>
         <div class="plot-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                Loading plot...
-            </div>
+            <div id="plot-2" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-2"></div>
         </div>
     </div>
-    
+
     <div id="tab3" class="tab-content">
-        <div class="help">
-            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | Tangential velocity = 2πr/T
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
         </div>
         <div class="plot-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                Loading plot...
-            </div>
+            <div id="plot-3" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-3"></div>
         </div>
     </div>
 
     <div id="tab4" class="tab-content">
-        <div class="help">
-            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | Shows how neutron star temperature correlates with age
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
         </div>
         <div class="plot-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                Loading plot...
-            </div>
+            <div id="plot-4" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-4"></div>
         </div>
     </div>
 
     <div id="tab5" class="tab-content">
-        <div class="help">
-            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | Displays mass-radius relationship with temperature coloring
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
         </div>
         <div class="plot-container">
-            <div class="loading">
-                <div class="spinner"></div>
-                Loading plot...
-            </div>
+            <div id="plot-5" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-5"></div>
         </div>
     </div>
 
     <script>
-        const svgFiles = ["neutron_stars_plots_plot1.html", "neutron_stars_plots_plot2.html", "neutron_stars_plots_plot3.html", "neutron_stars_plots_plot4.html", "neutron_stars_plots_plot5.html", "neutron_stars_plots_plot6.html"];
-        const loadedTabs = new Set();
-        
+        const CSV_PATH = 'neutron_stars_plots_cache.csv';
+        const INITIAL_CHUNK_SIZE = 100;
+        const CHUNK_SIZE = 50000;
+
+        const plots = [
+            { x: 'solarRadius', y: 'rotationalPeriod', color: 'age', title: 'Radius vs Rotational Period (color=age)', xlabel: 'Solar Radius (R☉)', ylabel: 'Rotational Period', colorbar: 'Age', colorscale: 'viridis' },
+            { x: 'age', y: 'rotationalPeriod', color: 'solarRadius', title: 'Rotational Period vs Age (color=radius)', xlabel: 'Age', ylabel: 'Rotational Period', colorbar: 'Radius (R☉)', colorscale: 'plasma' },
+            { x: 'age', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Age (color=rotational period)', xlabel: 'Age', ylabel: 'Solar Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
+            { x: 'age', y: 'tangentialVelocity', color: 'mass', title: 'Tangential Velocity vs Age (color=mass)', xlabel: 'Age', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Mass (M☉)', colorscale: 'plasma', reference_line: 299792 },
+            { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (R☉)', colorscale: 'plasma' },
+            { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' }
+        ];
+
+        let csvData = [];
+        let csvHeaders = null;
+        let csvComplete = false;
+        let loadedTabs = new Set();
+
+        function parseCSVLine(line, headers) {
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            values.push(current.trim());
+
+            const row = {};
+            headers.forEach((h, i) => {
+                const val = values[i];
+                if (h && val !== undefined && val !== '') {
+                    row[h] = isNaN(val) ? val : parseFloat(val);
+                }
+            });
+
+            return row;
+        }
+
+        async function loadCSVStreaming() {
+            if (csvData.length > 0) return csvData;
+
+            console.log('[CSV] Loading from ' + CSV_PATH);
+
+            const response = await fetch(CSV_PATH);
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let headersParsed = false;
+            let initialChunkResolved = false;
+            let resolveInitial = null;
+            const initialPromise = new Promise(r => { resolveInitial = r; });
+
+            // Start streaming in background
+            (async () => {
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            console.log('[CSV] Stream complete');
+                            csvComplete = true;
+                            break;
+                        }
+
+                        buffer += decoder.decode(value, { stream: true });
+
+                        const lines = buffer.split('\n');
+                        buffer = lines[lines.length - 1];
+
+                        for (let i = 0; i < lines.length - 1; i++) {
+                            const line = lines[i].trim();
+                            if (!line) continue;
+
+                            if (!headersParsed) {
+                                csvHeaders = line.split(',').map(h => h.trim().replace(/\r/g, ''));
+                                headersParsed = true;
+                                console.log('[CSV] Headers:', csvHeaders);
+                            } else {
+                                const row = parseCSVLine(line, csvHeaders);
+                                csvData.push(row);
+
+                                if (!initialChunkResolved && csvData.length >= INITIAL_CHUNK_SIZE) {
+                                    console.log('[CSV] Initial chunk ready with ' + csvData.length + ' rows');
+                                    resolveInitial(csvData);
+                                    initialChunkResolved = true;
+                                }
+
+                                if (csvData.length % 100000 === 0) {
+                                    console.log('[CSV] Received ' + csvData.length.toLocaleString() + ' rows');
+                                }
+                            }
+                        }
+                    }
+
+                    if (buffer.trim() && headersParsed) {
+                        const row = parseCSVLine(buffer.trim(), csvHeaders);
+                        csvData.push(row);
+                    }
+
+                    console.log('[CSV] Complete! Total rows: ' + csvData.length.toLocaleString());
+
+                    if (!initialChunkResolved) {
+                        resolveInitial(csvData);
+                    }
+                } catch (error) {
+                    console.error('[CSV] Streaming error:', error);
+                    if (!initialChunkResolved) {
+                        resolveInitial(null);
+                    }
+                }
+            })();
+
+            return initialPromise;
+        }
+
         function showTab(index) {
             const tabs = document.querySelectorAll('.tab');
             const contents = document.querySelectorAll('.tab-content');
-            
+
             tabs.forEach((tab, i) => {
                 tab.classList.toggle('active', i === index);
             });
-            
+
             contents.forEach((content, i) => {
                 content.classList.toggle('active', i === index);
             });
-            
+
             if (!loadedTabs.has(index)) {
-                loadSVG(index);
+                console.log('[Tab ' + index + '] Loading plot...');
+                loadAndStreamData(index);
+            } else {
+                console.log('[Tab ' + index + '] Already loaded');
             }
         }
-        
-        function loadSVG(index) {
-            const tabContent = document.getElementById('tab' + index);
-            const container = tabContent.querySelector('.plot-container');
-            const svgPath = svgFiles[index];
-            
-            fetch(svgPath)
-                .then(response => response.text())
-                .then(content => {
-                    container.innerHTML = content;
-                    loadedTabs.add(index);
-                    
-                    // Re-execute scripts after a brief delay to ensure DOM is ready
-                    setTimeout(() => {
-                        const scripts = container.querySelectorAll('script');
-                        scripts.forEach(oldScript => {
-                            if (oldScript.type === 'application/json') {
-                                // Skip JSON data scripts
-                                return;
-                            }
-                            const newScript = document.createElement('script');
-                            if (oldScript.src) {
-                                newScript.src = oldScript.src;
-                            } else {
-                                newScript.textContent = oldScript.textContent;
-                            }
-                            oldScript.parentNode.replaceChild(newScript, oldScript);
-                        });
-                    }, 100);
-                })
-                .catch(error => {
-                    container.innerHTML = '<div style="color: #f44336; padding: 40px; text-align: center;">Error loading plot: ' + error.message + '</div>';
+
+        async function loadAndStreamData(tabIndex) {
+            const loadingDiv = document.getElementById('loading-' + tabIndex);
+            const plotConfig = plots[tabIndex];
+            const startTime = performance.now();
+
+            console.log('[Plot ' + tabIndex + '] Starting load for: ' + plotConfig.title);
+
+            try {
+                const data = await loadCSVStreaming();
+                if (!data) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
+                    return;
+                }
+
+                const plotDiv = document.getElementById('plot-' + tabIndex);
+
+                const processData = (rawData) => rawData.map(row => {
+                    const radiusKm = row.solarRadius * 696000;
+                    const periodSeconds = row.rotationalPeriod * 86400;
+                    const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
+                    return {
+                        ...row,
+                        tangentialVelocity: tangVel
+                    };
                 });
+
+                const xField = plotConfig.x;
+                const yField = plotConfig.y;
+                const colorField = plotConfig.color;
+
+                let processed = processData(data);
+
+                const colorVals = processed.map(r => r[colorField]).filter(v => v !== null && v !== undefined && v > 0);
+                let colorMin = Math.min(...colorVals);
+                let colorMax = Math.max(...colorVals);
+
+                const initialChunk = {};
+                for (const key of Object.keys(processed[0])) {
+                    initialChunk[key] = processed.slice(0, INITIAL_CHUNK_SIZE).map(r => r[key]);
+                }
+
+                const trace = {
+                    x: initialChunk[xField],
+                    y: initialChunk[yField],
+                    mode: 'markers',
+                    type: 'scattergl',
+                    marker: {
+                        size: 4,
+                        color: initialChunk[colorField],
+                        colorscale: plotConfig.colorscale === 'viridis' ? 'Viridis' : 'Plasma',
+                        showscale: true,
+                        colorbar: { title: plotConfig.colorbar },
+                        cmin: colorMin,
+                        cmax: colorMax
+                    },
+                    text: initialChunk.system,
+                    hoverinfo: 'text'
+                };
+
+                const layout = {
+                    title: plotConfig.title,
+                    xaxis: { title: plotConfig.xlabel, type: 'log' },
+                    yaxis: { title: plotConfig.ylabel, type: 'log' },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    hovermode: 'closest',
+                    autosize: true,
+                    height: 700,
+                    margin: { l: 80, r: 80, t: 80, b: 80 }
+                };
+
+                if (plotConfig.reference_line) {
+                    layout.shapes = [{
+                        type: 'line',
+                        x0: Math.min(...trace.x),
+                        x1: Math.max(...trace.x),
+                        y0: plotConfig.reference_line,
+                        y1: plotConfig.reference_line,
+                        line: { color: '#00ff00', width: 2, dash: 'dash' }
+                    }];
+                }
+
+                Plotly.newPlot(plotDiv, [trace], layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+
+                let currentOffset = INITIAL_CHUNK_SIZE;
+                loadingDiv.innerHTML = '<div class="spinner"></div>Streaming data as it loads...';
+
+                // Update progress periodically
+                const progressInterval = setInterval(() => {
+                    if (csvData.length > INITIAL_CHUNK_SIZE) {
+                        loadingDiv.innerHTML = '<div class="spinner"></div>Loaded ' + Math.min(currentOffset, csvData.length).toLocaleString() + ' of 3,318,091 points...';
+                    }
+                }, 500);
+
+                (async () => {
+                    try {
+                        let offset = INITIAL_CHUNK_SIZE;
+                        let updateCount = 0;
+                        let pendingData = { x: [], y: [], color: [], text: [] };
+                        const BATCH_INTERVAL = 250; // Update every 250ms instead of 50ms
+                        const UPDATE_BATCH_SIZE = 10000; // Smaller visual updates
+
+                        console.log('[Plot ' + tabIndex + '] Starting streaming loop, initial csvData.length:', csvData.length);
+
+                        // Batch updates using requestAnimationFrame
+                        let lastUpdateTime = performance.now();
+                        const flushPending = () => {
+                            if (pendingData.x.length === 0) return;
+
+                            Plotly.extendTraces(plotDiv, {
+                                x: [pendingData.x],
+                                y: [pendingData.y],
+                                'marker.color': [pendingData.color],
+                                text: [pendingData.text]
+                            }, [0]);
+
+                            updateCount++;
+                            pendingData = { x: [], y: [], color: [], text: [] };
+                            lastUpdateTime = performance.now();
+                        };
+
+                        while (true) {
+                            // Wait for new data
+                            while (csvData.length <= offset && !csvComplete) {
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+
+                            if (offset >= csvData.length) break;
+
+                            processed = processData(csvData);
+
+                            const end = Math.min(offset + CHUNK_SIZE, csvData.length);
+                            const chunk = processed.slice(offset, end);
+
+                            if (chunk.length > 0) {
+                                // Add to pending batch
+                                pendingData.x.push(...chunk.map(r => r[xField]));
+                                pendingData.y.push(...chunk.map(r => r[yField]));
+                                pendingData.color.push(...chunk.map(r => r[colorField]));
+                                pendingData.text.push(...chunk.map(r => r.system || ''));
+
+                                // Flush if batch size reached OR time elapsed
+                                const now = performance.now();
+                                if (pendingData.x.length >= UPDATE_BATCH_SIZE || (now - lastUpdateTime) >= BATCH_INTERVAL) {
+                                    flushPending();
+                                    // Yield to browser to stay responsive
+                                    await new Promise(resolve => requestAnimationFrame(resolve));
+                                }
+                            }
+
+                            currentOffset = offset = end;
+
+                            if (offset % 100000 === 0) {
+                                console.log('[Plot ' + tabIndex + '] Processed ' + offset.toLocaleString() + ' rows');
+                            }
+
+                            // Smaller delay between processing chunks
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                        }
+
+                        // Flush any remaining data
+                        flushPending();
+
+                        console.log('[Plot ' + tabIndex + '] Streaming loop finished, final csvData.length:', csvData.length);
+
+                        loadingDiv.innerHTML = '';
+                        clearInterval(progressInterval);
+                        loadedTabs.add(tabIndex);
+
+                        const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+                        console.log('[Plot ' + tabIndex + '] Complete in ' + elapsed + 's with ' + updateCount + ' updates');
+                    } catch (err) {
+                        console.error('[Plot ' + tabIndex + '] Streaming error:', err);
+                        loadingDiv.innerHTML = '<div style="color: #f44336;">Error streaming data: ' + err.message + '</div>';
+                    }
+                })();
+
+            } catch (error) {
+                console.error('[Plot ' + tabIndex + '] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+            }
         }
-        
+
         window.addEventListener('DOMContentLoaded', () => {
-            loadSVG(0);
+            loadAndStreamData(0);
         });
     </script>
 </body>
+
 </html>
