@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neutron Stars Analysis - 27658 stars</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .header {
+            background: #2d2d2d;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .tabs {
+            display: flex;
+            background: #2d2d2d;
+            padding: 0 20px;
+            border-bottom: 1px solid #444;
+            overflow-x: auto;
+        }
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #888;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+        .tab:hover {
+            color: #fff;
+            background: rgba(255,255,255,0.05);
+        }
+        .tab.active {
+            color: #4a9eff;
+            border-bottom-color: #4a9eff;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+            animation: fadeIn 0.3s;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .plot-container {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            overflow-x: auto;
+        }
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+        .spinner {
+            border: 3px solid #444;
+            border-top: 3px solid #4a9eff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        svg {
+            max-width: 100%;
+            height: auto;
+        }
+        .help {
+            background: #2d2d2d;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .help strong {
+            color: #4a9eff;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Neutron Stars Analysis</h1>
+        <div class="subtitle">27658 neutron stars analyzed | Interactive controls: zoom, pan, box select</div>
+    </div>
+    
+    <div class="tabs">
+        <button class="tab active" onclick="showTab(0)">Radius vs Rotational Period</button>
+        <button class="tab" onclick="showTab(1)">Rotational Period vs Age</button>
+        <button class="tab" onclick="showTab(2)">Radius vs Age</button>
+        <button class="tab" onclick="showTab(3)">Tangential Velocity vs Age</button>
+        <button class="tab" onclick="showTab(4)">Temperature vs Age</button>
+        <button class="tab" onclick="showTab(5)">Mass vs Radius</button>
+    </div>
+    
+    <div id="tab0" class="tab-content active">
+        <div class="help">
+            <strong>Controls:</strong> Zoom In/Out buttons, Reset view, Pan mode (drag to move), Box Select (drag to zoom to region), Mouse wheel to zoom at cursor
+        </div>
+        <div class="plot-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading plot...
+            </div>
+        </div>
+    </div>
+    
+    <div id="tab1" class="tab-content">
+        <div class="help">
+            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | WebGL rendering for millions of points
+        </div>
+        <div class="plot-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading plot...
+            </div>
+        </div>
+    </div>
+    
+    <div id="tab2" class="tab-content">
+        <div class="help">
+            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | WebGL rendering for millions of points
+        </div>
+        <div class="plot-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading plot...
+            </div>
+        </div>
+    </div>
+    
+    <div id="tab3" class="tab-content">
+        <div class="help">
+            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | Tangential velocity = 2πr/T
+        </div>
+        <div class="plot-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading plot...
+            </div>
+        </div>
+    </div>
+
+    <div id="tab4" class="tab-content">
+        <div class="help">
+            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | Shows how neutron star temperature correlates with age
+        </div>
+        <div class="plot-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading plot...
+            </div>
+        </div>
+    </div>
+
+    <div id="tab5" class="tab-content">
+        <div class="help">
+            <strong>Controls:</strong> Click and drag to pan, Mouse wheel to zoom, Click points to open in Canonn, Hover for details | Displays mass-radius relationship with temperature coloring
+        </div>
+        <div class="plot-container">
+            <div class="loading">
+                <div class="spinner"></div>
+                Loading plot...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const svgFiles = ["neutron_stars_plots_plot1.html", "neutron_stars_plots_plot2.html", "neutron_stars_plots_plot3.html", "neutron_stars_plots_plot4.html", "neutron_stars_plots_plot5.html", "neutron_stars_plots_plot6.html"];
+        const loadedTabs = new Set();
+        
+        function showTab(index) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach((tab, i) => {
+                tab.classList.toggle('active', i === index);
+            });
+            
+            contents.forEach((content, i) => {
+                content.classList.toggle('active', i === index);
+            });
+            
+            if (!loadedTabs.has(index)) {
+                loadSVG(index);
+            }
+        }
+        
+        function loadSVG(index) {
+            const tabContent = document.getElementById('tab' + index);
+            const container = tabContent.querySelector('.plot-container');
+            const svgPath = svgFiles[index];
+            
+            fetch(svgPath)
+                .then(response => response.text())
+                .then(content => {
+                    container.innerHTML = content;
+                    loadedTabs.add(index);
+                    
+                    // Re-execute scripts after a brief delay to ensure DOM is ready
+                    setTimeout(() => {
+                        const scripts = container.querySelectorAll('script');
+                        scripts.forEach(oldScript => {
+                            if (oldScript.type === 'application/json') {
+                                // Skip JSON data scripts
+                                return;
+                            }
+                            const newScript = document.createElement('script');
+                            if (oldScript.src) {
+                                newScript.src = oldScript.src;
+                            } else {
+                                newScript.textContent = oldScript.textContent;
+                            }
+                            oldScript.parentNode.replaceChild(newScript, oldScript);
+                        });
+                    }, 100);
+                })
+                .catch(error => {
+                    container.innerHTML = '<div style="color: #f44336; padding: 40px; text-align: center;">Error loading plot: ' + error.message + '</div>';
+                });
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            loadSVG(0);
+        });
+    </script>
+</body>
+</html>
