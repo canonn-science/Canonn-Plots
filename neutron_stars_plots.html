@@ -498,6 +498,17 @@
                     displayModeBar: true
                 });
 
+                // Add click handler for navigation to Canonn signals
+                plotDiv.on('plotly_click', function (data) {
+                    const point = data.points[0];
+                    if (point && point.text) {
+                        const systemName = point.text;
+                        const url = 'https://signals.canonn.tech/?system=' + encodeURIComponent(systemName);
+                        console.log('[Plot] Opening system:', systemName, 'at', url);
+                        window.open(url, '_blank');
+                    }
+                });
+
                 let currentOffset = INITIAL_CHUNK_SIZE;
                 loadingDiv.innerHTML = '<div class="spinner"></div>Streaming data as it loads...';
 
