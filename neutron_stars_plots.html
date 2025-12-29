@@ -233,9 +233,153 @@
         let workerMessageId = 0;
         let workerCallbacks = new Map();
 
+        // Format hover text with proper units
+        function formatHoverText(row) {
+            const SPEED_OF_LIGHT = 299792; // km/s
+            const radiusKm = row.solarRadius * 696000;
+
+            let hoverParts = [`<b>${row.system}</b>`];
+
+            // Radius: show both km and solar radius
+            if (row.solarRadius !== undefined) {
+                hoverParts.push(`Radius: ${radiusKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km (${row.solarRadius.toFixed(3)} R☉)`);
+            }
+
+            // Rotational Period: show in km/s or c
+            if (row.rotationalPeriod !== undefined && row.tangentialVelocity !== undefined) {
+                if (row.tangentialVelocity >= 0.1 * SPEED_OF_LIGHT) {
+                    const speedInC = row.tangentialVelocity / SPEED_OF_LIGHT;
+                    hoverParts.push(`Rotational Velocity: ${speedInC.toFixed(3)}c`);
+                } else {
+                    hoverParts.push(`Rotational Velocity: ${row.tangentialVelocity.toLocaleString(undefined, { maximumFractionDigits: 1 })} km/s`);
+                }
+
+                // Format rotational period with appropriate unit
+                const periodDays = row.rotationalPeriod;
+                const periodSeconds = periodDays * 86400;
+
+                if (periodSeconds < 1) {
+                    // Less than 1 second - show in milliseconds
+                    hoverParts.push(`Rotational Period: ${(periodSeconds * 1000).toFixed(2)} ms`);
+                } else if (periodSeconds < 60) {
+                    // Less than 1 minute - show in seconds
+                    hoverParts.push(`Rotational Period: ${periodSeconds.toFixed(3)} s`);
+                } else if (periodSeconds < 3600) {
+                    // Less than 1 hour - show in minutes
+                    hoverParts.push(`Rotational Period: ${(periodSeconds / 60).toFixed(2)} min`);
+                } else if (periodDays < 1) {
+                    // Less than 1 day - show in hours
+                    hoverParts.push(`Rotational Period: ${(periodSeconds / 3600).toFixed(2)} hr`);
+                } else if (periodDays < 365.25) {
+                    // Less than 1 year - show in days
+                    hoverParts.push(`Rotational Period: ${periodDays.toFixed(2)} days`);
+                } else if (periodDays < 36525) {
+                    // Less than 100 years - show in years
+                    const periodYears = periodDays / 365.25;
+                    hoverParts.push(`Rotational Period: ${periodYears.toFixed(2)} years`);
+                } else {
+                    // 100 years or more - show in centuries
+                    const periodCenturies = periodDays / 36525;
+                    hoverParts.push(`Rotational Period: ${periodCenturies.toFixed(2)} centuries`);
+                }
+            }
+
+            // Age in millions of years (already stored as Myr in CSV)
+            if (row.age !== undefined) {
+                const ageMyr = row.age;
+                if (ageMyr >= 1000) {
+                    // Show in billions of years for large values
+                    const ageGyr = ageMyr / 1000;
+                    hoverParts.push(`Age: ${ageGyr.toLocaleString(undefined, { maximumFractionDigits: 2 })} Gyr`);
+                } else {
+                    hoverParts.push(`Age: ${ageMyr.toLocaleString(undefined, { maximumFractionDigits: 1 })} Myr`);
+                }
+            }
+
+            // Temperature in Kelvin
+            if (row.temperature !== undefined) {
+                hoverParts.push(`Temperature: ${row.temperature.toLocaleString(undefined, { maximumFractionDigits: 0 })} K`);
+            }
+
+            // Mass in solar masses
+            if (row.mass !== undefined) {
+                hoverParts.push(`Mass: ${row.mass.toFixed(3)} M☉`);
+            }
+
+            return hoverParts.join('<br>');
+        }
+
         // Web Worker for data processing
         function createDataWorker() {
             const workerCode = `
+                // Format hover text with proper units (inside worker for speed)
+                function formatHoverText(row) {
+                    const SPEED_OF_LIGHT = 299792; // km/s
+                    const radiusKm = row.solarRadius * 696000;
+                    
+                    let hoverParts = ['<b>' + row.system + '</b>'];
+                    
+                    // Radius: show both km and solar radius
+                    if (row.solarRadius !== undefined) {
+                        hoverParts.push('Radius: ' + radiusKm.toFixed(0) + ' km (' + row.solarRadius.toFixed(3) + ' R☉)');
+                    }
+                    
+                    // Rotational Period: show in km/s or c
+                    if (row.rotationalPeriod !== undefined && row.tangentialVelocity !== undefined) {
+                        if (row.tangentialVelocity >= 0.1 * SPEED_OF_LIGHT) {
+                            const speedInC = row.tangentialVelocity / SPEED_OF_LIGHT;
+                            hoverParts.push('Rotational Velocity: ' + speedInC.toFixed(3) + 'c');
+                        } else {
+                            hoverParts.push('Rotational Velocity: ' + row.tangentialVelocity.toFixed(1) + ' km/s');
+                        }
+                        
+                        // Format rotational period with appropriate unit
+                        const periodDays = row.rotationalPeriod;
+                        const periodSeconds = periodDays * 86400;
+                        
+                        if (periodSeconds < 1) {
+                            hoverParts.push('Rotational Period: ' + (periodSeconds * 1000).toFixed(2) + ' ms');
+                        } else if (periodSeconds < 60) {
+                            hoverParts.push('Rotational Period: ' + periodSeconds.toFixed(3) + ' s');
+                        } else if (periodSeconds < 3600) {
+                            hoverParts.push('Rotational Period: ' + (periodSeconds / 60).toFixed(2) + ' min');
+                        } else if (periodDays < 1) {
+                            hoverParts.push('Rotational Period: ' + (periodSeconds / 3600).toFixed(2) + ' hr');
+                        } else if (periodDays < 365.25) {
+                            hoverParts.push('Rotational Period: ' + periodDays.toFixed(2) + ' days');
+                        } else if (periodDays < 36525) {
+                            const periodYears = periodDays / 365.25;
+                            hoverParts.push('Rotational Period: ' + periodYears.toFixed(2) + ' years');
+                        } else {
+                            const periodCenturies = periodDays / 36525;
+                            hoverParts.push('Rotational Period: ' + periodCenturies.toFixed(2) + ' centuries');
+                        }
+                    }
+                    
+                    // Age in millions of years
+                    if (row.age !== undefined) {
+                        const ageMyr = row.age;
+                        if (ageMyr >= 1000) {
+                            const ageGyr = ageMyr / 1000;
+                            hoverParts.push('Age: ' + ageGyr.toFixed(2) + ' Gyr');
+                        } else {
+                            hoverParts.push('Age: ' + ageMyr.toFixed(1) + ' Myr');
+                        }
+                    }
+                    
+                    // Temperature in Kelvin
+                    if (row.temperature !== undefined) {
+                        hoverParts.push('Temperature: ' + row.temperature.toFixed(0) + ' K');
+                    }
+                    
+                    // Mass in solar masses
+                    if (row.mass !== undefined) {
+                        hoverParts.push('Mass: ' + row.mass.toFixed(3) + ' M☉');
+                    }
+                    
+                    return hoverParts.join('<br>');
+                }
+            
                 self.onmessage = function(e) {
                     const { type, data, fields, id } = e.data;
                     
@@ -244,19 +388,17 @@
                             const radiusKm = row.solarRadius * 696000;
                             const periodSeconds = row.rotationalPeriod * 86400;
                             const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
-                            return {
+                            const processedRow = {
                                 ...row,
                                 tangentialVelocity: tangVel
                             };
+                            // Pre-compute hover text in worker
+                            processedRow.hoverText = formatHoverText(processedRow);
+                            return processedRow;
                         });
                         
-                        // Extract only needed fields to reduce transfer size
-                        const result = {};
-                        fields.forEach(field => {
-                            result[field] = processed.map(r => r[field]);
-                        });
-                        
-                        self.postMessage({ type: 'processed', data: result, id: id });
+                        // Return full processed rows with pre-computed hover text
+                        self.postMessage({ type: 'processed', data: processed, id: id });
                     }
                 };
             `;
@@ -439,33 +581,31 @@
                 const xField = plotConfig.x;
                 const yField = plotConfig.y;
                 const colorField = plotConfig.color;
-                const neededFields = [xField, yField, colorField, 'system', 'tangentialVelocity'];
 
                 // Process initial chunk with worker
                 const initialData = data.slice(0, INITIAL_CHUNK_SIZE);
-                const processedInitial = await processWithWorker(initialData, neededFields);
+                const processedInitial = await processWithWorker(initialData, null);
 
-                const colorVals = processedInitial[colorField].filter(v => v !== null && v !== undefined && v > 0);
+                const colorVals = processedInitial.map(r => r[colorField]).filter(v => v !== null && v !== undefined && v > 0);
                 let colorMin = Math.min(...colorVals);
                 let colorMax = Math.max(...colorVals);
 
-                const initialChunk = processedInitial;
-
                 const trace = {
-                    x: initialChunk[xField],
-                    y: initialChunk[yField],
+                    x: processedInitial.map(r => r[xField]),
+                    y: processedInitial.map(r => r[yField]),
                     mode: 'markers',
                     type: 'scattergl',
                     marker: {
                         size: 4,
-                        color: initialChunk[colorField],
+                        color: processedInitial.map(r => r[colorField]),
                         colorscale: plotConfig.colorscale === 'viridis' ? 'Viridis' : 'Plasma',
                         showscale: true,
                         colorbar: { title: plotConfig.colorbar },
                         cmin: colorMin,
                         cmax: colorMax
                     },
-                    text: initialChunk.system,
+                    text: processedInitial.map(r => r.hoverText),
+                    customdata: processedInitial.map(r => r.system),
                     hoverinfo: 'text'
                 };
 
@@ -501,8 +641,8 @@
                 // Add click handler for navigation to Canonn signals
                 plotDiv.on('plotly_click', function (data) {
                     const point = data.points[0];
-                    if (point && point.text) {
-                        const systemName = point.text;
+                    if (point && point.customdata) {
+                        const systemName = point.customdata;
                         const url = 'https://signals.canonn.tech/?system=' + encodeURIComponent(systemName);
                         console.log('[Plot] Opening system:', systemName, 'at', url);
                         window.open(url, '_blank');
@@ -525,7 +665,7 @@
                     try {
                         let offset = INITIAL_CHUNK_SIZE;
                         let updateCount = 0;
-                        let pendingData = { x: [], y: [], color: [], text: [] };
+                        let pendingData = [];
                         let isUpdating = false;
 
                         console.log('[Plot ' + tabIndex + '] Starting streaming loop, initial csvData.length:', csvData.length);
@@ -533,22 +673,23 @@
                         // Optimized batch updates - non-blocking
                         let lastUpdateTime = performance.now();
                         const flushPending = async () => {
-                            if (pendingData.x.length === 0 || isUpdating) return;
+                            if (pendingData.length === 0 || isUpdating) return;
 
                             isUpdating = true;
-                            const dataToUpdate = { ...pendingData };
-                            const pointCount = pendingData.x.length;
-                            pendingData = { x: [], y: [], color: [], text: [] };
+                            const dataToUpdate = pendingData.slice();
+                            const pointCount = pendingData.length;
+                            pendingData = [];
 
                             const updateStart = performance.now();
                             console.log('[Plot ' + tabIndex + '] Update #' + (updateCount + 1) + ': Adding ' + pointCount.toLocaleString() + ' points (total will be ~' + (offset + pointCount).toLocaleString() + ')');
 
                             await new Promise(resolve => {
                                 Plotly.extendTraces(plotDiv, {
-                                    x: [dataToUpdate.x],
-                                    y: [dataToUpdate.y],
-                                    'marker.color': [dataToUpdate.color],
-                                    text: [dataToUpdate.text]
+                                    x: [dataToUpdate.map(r => r[xField])],
+                                    y: [dataToUpdate.map(r => r[yField])],
+                                    'marker.color': [dataToUpdate.map(r => r[colorField])],
+                                    text: [dataToUpdate.map(r => r.hoverText)],
+                                    customdata: [dataToUpdate.map(r => r.system)]
                                 }, [0]);
                                 requestAnimationFrame(resolve);
                             });
@@ -579,16 +720,13 @@
 
                             if (chunk.length > 0) {
                                 // Process chunk in worker
-                                const processedChunk = await processWithWorker(chunk, neededFields);
+                                const processedChunk = await processWithWorker(chunk, null);
 
-                                // Add to pending batch
-                                pendingData.x.push(...processedChunk[xField]);
-                                pendingData.y.push(...processedChunk[yField]);
-                                pendingData.color.push(...processedChunk[colorField]);
-                                pendingData.text.push(...(processedChunk.system || []));
+                                // Add to pending batch (store full rows)
+                                pendingData.push(...processedChunk);
 
                                 // Trigger update when batch size reached (non-blocking)
-                                if (pendingData.x.length >= UPDATE_BATCH_SIZE && !isUpdating) {
+                                if (pendingData.length >= UPDATE_BATCH_SIZE && !isUpdating) {
                                     flushPending(); // Fire and forget
                                 }
                             }
