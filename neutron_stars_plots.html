@@ -433,7 +433,7 @@
         }
 
         // Smart downsampling: reduce overlapping points at default zoom
-        function downsampleForDisplay(rows, xField, yField, gridSize = 800) {
+        function downsampleForDisplay(rows, xField, yField, colorField, gridSize = 800) {
             if (rows.length === 0) return rows;
 
             // Find data ranges (in log space since we use log axes)
@@ -474,7 +474,7 @@
                 return rows;
             }
 
-            // Bin points into grid cells
+            // Bin points into grid cells (store arrays of points per cell)
             for (const row of rows) {
                 const x = row[xField];
                 const y = row[yField];
@@ -488,15 +488,53 @@
                         const cellY = Math.floor((logY - yMin) / yRange * gridSize);
                         const cellKey = cellX + ',' + cellY;
 
-                        // Keep first point in each cell (or could use random/best)
+                        // Store all points in this cell
                         if (!grid.has(cellKey)) {
-                            grid.set(cellKey, row);
+                            grid.set(cellKey, []);
                         }
+                        grid.get(cellKey).push(row);
                     }
                 }
             }
 
-            const sampled = Array.from(grid.values());
+            // Select representative points from each cell
+            // Keep 1 point per cell, or more if there's significant color variation
+            const sampled = [];
+
+            for (const cellPoints of grid.values()) {
+                if (cellPoints.length === 1) {
+                    sampled.push(cellPoints[0]);
+                    continue;
+                }
+
+                // For cells with multiple points, check color variation
+                const pointsWithColor = cellPoints.filter(p => p[colorField] !== undefined && isFinite(p[colorField]));
+
+                if (pointsWithColor.length === 0) {
+                    sampled.push(cellPoints[0]);
+                    continue;
+                }
+
+                // Sort by color value
+                pointsWithColor.sort((a, b) => a[colorField] - b[colorField]);
+
+                const minColor = pointsWithColor[0][colorField];
+                const maxColor = pointsWithColor[pointsWithColor.length - 1][colorField];
+                const colorRange = maxColor - minColor;
+                const avgColor = (minColor + maxColor) / 2;
+
+                // If color variation is significant (>20% of average), keep min/mid/max
+                // Otherwise just keep one representative
+                if (colorRange > avgColor * 0.2 && pointsWithColor.length >= 3) {
+                    // Keep 3 points showing color range
+                    sampled.push(pointsWithColor[0]); // min
+                    sampled.push(pointsWithColor[Math.floor(pointsWithColor.length / 2)]); // mid
+                    sampled.push(pointsWithColor[pointsWithColor.length - 1]); // max
+                } else {
+                    // Keep just one point (median)
+                    sampled.push(pointsWithColor[Math.floor(pointsWithColor.length / 2)]);
+                }
+            }
 
             // Safety check: if downsampling removed too many points, return original
             if (sampled.length === 0) {
@@ -663,8 +701,9 @@
                 const processedInitial = await processWithWorker(initialData, null);
 
                 // Downsample for initial display to reduce overlapping points
-                const sampledInitial = downsampleForDisplay(processedInitial, xField, yField, 800);
+                const sampledInitial = downsampleForDisplay(processedInitial, xField, yField, colorField, 800);
 
+                // Calculate color range from ALL processed data (not just sampled) for consistent colors
                 const colorVals = processedInitial.map(r => r[colorField]).filter(v => v !== null && v !== undefined && v > 0);
                 let colorMin = Math.min(...colorVals);
                 let colorMax = Math.max(...colorVals);
@@ -802,7 +841,7 @@
                                 const processedChunk = await processWithWorker(chunk, null);
 
                                 // Downsample chunk to reduce overlaps
-                                const sampledChunk = downsampleForDisplay(processedChunk, xField, yField, 800);
+                                const sampledChunk = downsampleForDisplay(processedChunk, xField, yField, colorField, 800);
 
                                 // Add to pending batch (store full rows)
                                 pendingData.push(...sampledChunk);
