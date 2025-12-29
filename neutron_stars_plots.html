@@ -696,9 +696,29 @@
                 const yField = plotConfig.y;
                 const colorField = plotConfig.color;
 
+                // Track min/max x and y values for physics constraint lines
+                let dataXMin = Infinity;
+                let dataXMax = -Infinity;
+                let dataYMin = Infinity;
+                let dataYMax = -Infinity;
+
                 // Process initial chunk with worker
                 const initialData = data.slice(0, INITIAL_CHUNK_SIZE);
                 const processedInitial = await processWithWorker(initialData, null);
+
+                // Update min/max from initial data
+                processedInitial.forEach(r => {
+                    const xVal = r[xField];
+                    const yVal = r[yField];
+                    if (xVal !== null && xVal !== undefined && !isNaN(xVal)) {
+                        dataXMin = Math.min(dataXMin, xVal);
+                        dataXMax = Math.max(dataXMax, xVal);
+                    }
+                    if (yVal !== null && yVal !== undefined && !isNaN(yVal)) {
+                        dataYMin = Math.min(dataYMin, yVal);
+                        dataYMax = Math.max(dataYMax, yVal);
+                    }
+                });
 
                 // Downsample for initial display to reduce overlapping points
                 const sampledInitial = downsampleForDisplay(processedInitial, xField, yField, colorField, 800);
@@ -737,9 +757,11 @@
                     hovermode: 'closest',
                     autosize: true,
                     height: 700,
-                    margin: { l: 80, r: 80, t: 80, b: 80 }
+                    margin: { l: 80, r: 80, t: 80, b: 80 },
+                    showlegend: false
                 };
 
+                // Add reference lines and annotations
                 if (plotConfig.reference_line) {
                     layout.shapes = [{
                         type: 'line',
@@ -751,10 +773,73 @@
                     }];
                 }
 
+                // Add physics constraint lines for Mass vs Radius plot (plot index 5)
+                if (tabIndex === 5) {
+                    // Schwarzschild radius: R = 2.95 km * M (solar masses) / 696000 km = 0.00000424 * M
+                    const schwarzschildSlope = 0.00000424;
+
+                    // Calculate Schwarzschild line endpoints constrained to data Y bounds
+                    let schwY0 = dataXMin * schwarzschildSlope;
+                    let schwY1 = dataXMax * schwarzschildSlope;
+                    let schwX0 = dataXMin;
+                    let schwX1 = dataXMax;
+
+                    // Clip to Y bounds
+                    if (schwY0 < dataYMin) {
+                        schwX0 = dataYMin / schwarzschildSlope;
+                        schwY0 = dataYMin;
+                    }
+                    if (schwY1 > dataYMax) {
+                        schwX1 = dataYMax / schwarzschildSlope;
+                        schwY1 = dataYMax;
+                    }
+
+                    layout.shapes = [
+                        // Schwarzschild radius - dotted red diagonal
+                        {
+                            type: 'line',
+                            x0: schwX0,
+                            x1: schwX1,
+                            y0: schwY0,
+                            y1: schwY1,
+                            line: { color: '#ff0000', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        }
+                    ];
+
+                    // Only add TOV limit line if 2.5 is within data range
+                    if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 2.5,
+                            x1: 2.5,
+                            y0: dataYMin,
+                            y1: dataYMax,
+                            line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+                }
+
                 Plotly.newPlot(plotDiv, [trace], layout, {
                     responsive: true,
                     displayModeBar: true
                 });
+
+                // Add legend key for physics constraint lines
+                if (tabIndex === 5) {
+                    let legendHTML = '<div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block;">';
+                    legendHTML += '<span style="color: #ff0000; font-size: 14px; margin-right: 20px;">⋯⋯⋯ Schwarzschild Radius</span>';
+                    if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                        legendHTML += '<span style="color: #9933ff; font-size: 14px;">⋯⋯⋯ TOV Limit (2.5 M☉)</span>';
+                    }
+                    legendHTML += '</div>';
+                    plotDiv.insertAdjacentHTML('afterend', legendHTML);
+                }
 
                 // Add click handler for navigation to Canonn signals
                 plotDiv.on('plotly_click', function (data) {
@@ -840,6 +925,20 @@
                                 // Process chunk in worker
                                 const processedChunk = await processWithWorker(chunk, null);
 
+                                // Update min/max from chunk
+                                processedChunk.forEach(r => {
+                                    const xVal = r[xField];
+                                    const yVal = r[yField];
+                                    if (xVal !== null && xVal !== undefined && !isNaN(xVal)) {
+                                        dataXMin = Math.min(dataXMin, xVal);
+                                        dataXMax = Math.max(dataXMax, xVal);
+                                    }
+                                    if (yVal !== null && yVal !== undefined && !isNaN(yVal)) {
+                                        dataYMin = Math.min(dataYMin, yVal);
+                                        dataYMax = Math.max(dataYMax, yVal);
+                                    }
+                                });
+
                                 // Downsample chunk to reduce overlaps
                                 const sampledChunk = downsampleForDisplay(processedChunk, xField, yField, colorField, 800);
 
@@ -871,6 +970,58 @@
                         }
 
                         console.log('[Plot ' + tabIndex + '] Streaming loop finished, final csvData.length:', csvData.length);
+
+                        // Update physics constraint lines with final data bounds
+                        if (tabIndex === 5) {
+                            const schwarzschildSlope = 0.00000424;
+
+                            // Calculate Schwarzschild line endpoints constrained to final data Y bounds
+                            let schwY0 = dataXMin * schwarzschildSlope;
+                            let schwY1 = dataXMax * schwarzschildSlope;
+                            let schwX0 = dataXMin;
+                            let schwX1 = dataXMax;
+
+                            // Clip to Y bounds
+                            if (schwY0 < dataYMin) {
+                                schwX0 = dataYMin / schwarzschildSlope;
+                                schwY0 = dataYMin;
+                            }
+                            if (schwY1 > dataYMax) {
+                                schwX1 = dataYMax / schwarzschildSlope;
+                                schwY1 = dataYMax;
+                            }
+
+                            const finalShapes = [
+                                {
+                                    type: 'line',
+                                    x0: schwX0,
+                                    x1: schwX1,
+                                    y0: schwY0,
+                                    y1: schwY1,
+                                    line: { color: '#ff0000', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                }
+                            ];
+
+                            if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: 2.5,
+                                    x1: 2.5,
+                                    y0: dataYMin,
+                                    y1: dataYMax,
+                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            Plotly.relayout(plotDiv, { shapes: finalShapes });
+                            console.log('[Plot ' + tabIndex + '] Updated physics lines to final bounds: X[' + dataXMin + ', ' + dataXMax + '], Y[' + dataYMin + ', ' + dataYMax + ']');
+                        }
 
                         clearInterval(progressInterval);
 
