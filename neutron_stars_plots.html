@@ -432,6 +432,82 @@
             });
         }
 
+        // Smart downsampling: reduce overlapping points at default zoom
+        function downsampleForDisplay(rows, xField, yField, gridSize = 800) {
+            if (rows.length === 0) return rows;
+
+            // Find data ranges (in log space since we use log axes)
+            let xMin = Infinity, xMax = -Infinity;
+            let yMin = Infinity, yMax = -Infinity;
+            let validCount = 0;
+
+            for (const row of rows) {
+                const x = row[xField];
+                const y = row[yField];
+                if (x > 0 && y > 0 && isFinite(x) && isFinite(y)) {
+                    const logX = Math.log10(x);
+                    const logY = Math.log10(y);
+                    if (isFinite(logX) && isFinite(logY)) {
+                        if (logX < xMin) xMin = logX;
+                        if (logX > xMax) xMax = logX;
+                        if (logY < yMin) yMin = logY;
+                        if (logY > yMax) yMax = logY;
+                        validCount++;
+                    }
+                }
+            }
+
+            // If no valid points or ranges are invalid, return original
+            if (validCount === 0 || !isFinite(xMin) || !isFinite(xMax) || !isFinite(yMin) || !isFinite(yMax)) {
+                console.log('[Downsample] No valid points for downsampling, returning original');
+                return rows;
+            }
+
+            // Create spatial grid
+            const grid = new Map();
+            const xRange = xMax - xMin;
+            const yRange = yMax - yMin;
+
+            // Safety check for range
+            if (xRange === 0 || yRange === 0) {
+                console.log('[Downsample] Zero range detected, returning original');
+                return rows;
+            }
+
+            // Bin points into grid cells
+            for (const row of rows) {
+                const x = row[xField];
+                const y = row[yField];
+                if (x > 0 && y > 0 && isFinite(x) && isFinite(y)) {
+                    const logX = Math.log10(x);
+                    const logY = Math.log10(y);
+
+                    if (isFinite(logX) && isFinite(logY)) {
+                        // Calculate grid cell
+                        const cellX = Math.floor((logX - xMin) / xRange * gridSize);
+                        const cellY = Math.floor((logY - yMin) / yRange * gridSize);
+                        const cellKey = cellX + ',' + cellY;
+
+                        // Keep first point in each cell (or could use random/best)
+                        if (!grid.has(cellKey)) {
+                            grid.set(cellKey, row);
+                        }
+                    }
+                }
+            }
+
+            const sampled = Array.from(grid.values());
+
+            // Safety check: if downsampling removed too many points, return original
+            if (sampled.length === 0) {
+                console.log('[Downsample] Result was empty, returning original');
+                return rows;
+            }
+
+            console.log('[Downsample] Reduced ' + rows.length.toLocaleString() + ' → ' + sampled.length.toLocaleString() + ' points (' + (sampled.length / rows.length * 100).toFixed(1) + '%)');
+            return sampled;
+        }
+
         function parseCSVLine(line, headers) {
             const values = [];
             let current = '';
@@ -586,26 +662,29 @@
                 const initialData = data.slice(0, INITIAL_CHUNK_SIZE);
                 const processedInitial = await processWithWorker(initialData, null);
 
+                // Downsample for initial display to reduce overlapping points
+                const sampledInitial = downsampleForDisplay(processedInitial, xField, yField, 800);
+
                 const colorVals = processedInitial.map(r => r[colorField]).filter(v => v !== null && v !== undefined && v > 0);
                 let colorMin = Math.min(...colorVals);
                 let colorMax = Math.max(...colorVals);
 
                 const trace = {
-                    x: processedInitial.map(r => r[xField]),
-                    y: processedInitial.map(r => r[yField]),
+                    x: sampledInitial.map(r => r[xField]),
+                    y: sampledInitial.map(r => r[yField]),
                     mode: 'markers',
                     type: 'scattergl',
                     marker: {
                         size: 4,
-                        color: processedInitial.map(r => r[colorField]),
+                        color: sampledInitial.map(r => r[colorField]),
                         colorscale: plotConfig.colorscale === 'viridis' ? 'Viridis' : 'Plasma',
                         showscale: true,
                         colorbar: { title: plotConfig.colorbar },
                         cmin: colorMin,
                         cmax: colorMax
                     },
-                    text: processedInitial.map(r => r.hoverText),
-                    customdata: processedInitial.map(r => r.system),
+                    text: sampledInitial.map(r => r.hoverText),
+                    customdata: sampledInitial.map(r => r.system),
                     hoverinfo: 'text'
                 };
 
@@ -722,8 +801,11 @@
                                 // Process chunk in worker
                                 const processedChunk = await processWithWorker(chunk, null);
 
+                                // Downsample chunk to reduce overlaps
+                                const sampledChunk = downsampleForDisplay(processedChunk, xField, yField, 800);
+
                                 // Add to pending batch (store full rows)
-                                pendingData.push(...processedChunk);
+                                pendingData.push(...sampledChunk);
 
                                 // Trigger update when batch size reached (non-blocking)
                                 if (pendingData.length >= UPDATE_BATCH_SIZE && !isUpdating) {
