@@ -152,6 +152,7 @@
         <button class="tab" onclick="showTab(3)">Tangential Velocity vs Age</button>
         <button class="tab" onclick="showTab(4)">Temperature vs Age</button>
         <button class="tab" onclick="showTab(5)">Mass vs Radius</button>
+        <button class="tab" onclick="showTab(6)">P-Ṗ Diagram</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -208,6 +209,16 @@
         </div>
     </div>
 
+    <div id="tab6" class="tab-content">
+        <div class="help"><strong>P-Ṗ Diagram:</strong> Classic pulsar diagram showing period vs period derivative. Red
+            dashed line = death line (pulsars below cannot emit radio waves). Dotted lines = constant age contours.
+        </div>
+        <div class="plot-container">
+            <div id="plot-6" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-6"></div>
+        </div>
+    </div>
+
     <script>
         const CSV_PATH = 'neutron_stars_plots_cache.csv.gz';
         const INITIAL_CHUNK_SIZE = 50000;
@@ -223,7 +234,8 @@
             { x: 'age', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Age (color=rotational period)', xlabel: 'Age', ylabel: 'Solar Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
             { x: 'age', y: 'tangentialVelocity', color: 'mass', title: 'Tangential Velocity vs Age (color=mass)', xlabel: 'Age', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Mass (M☉)', colorscale: 'plasma', reference_line: 299792 },
             { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (R☉)', colorscale: 'plasma' },
-            { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' }
+            { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
+            { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true }
         ];
 
         let csvData = [];
@@ -388,9 +400,16 @@
                             const radiusKm = row.solarRadius * 696000;
                             const periodSeconds = row.rotationalPeriod * 86400;
                             const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
+                            
+                            // Calculate period derivative: P-dot = P / (2 * tau)
+                            // age is in Myr, convert to seconds: age * 1e6 * 365.25 * 86400
+                            const ageSeconds = row.age * 1e6 * 365.25 * 86400;
+                            const periodDerivative = periodSeconds / (2 * ageSeconds);
+                            
                             const processedRow = {
                                 ...row,
-                                tangentialVelocity: tangVel
+                                tangentialVelocity: tangVel,
+                                periodDerivative: periodDerivative
                             };
                             // Pre-compute hover text in worker
                             processedRow.hoverText = formatHoverText(processedRow);
@@ -668,6 +687,12 @@
                 loadAndStreamData(index);
             } else {
                 console.log('[Tab ' + index + '] Already loaded');
+                // Ensure loading div shows completion status, not spinner
+                const loadingDiv = document.getElementById('loading-' + index);
+                if (loadingDiv && loadingDiv.innerHTML.includes('spinner')) {
+                    const totalPoints = csvData.length;
+                    loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + totalPoints.toLocaleString() + ' data points</div>';
+                }
             }
         }
 
@@ -825,6 +850,80 @@
                     }
                 }
 
+                // Add physics constraint lines for P-Pdot diagram (plot index 6)
+                if (tabIndex === 6) {
+                    layout.shapes = [];
+                    layout.annotations = [];
+
+                    // Death line: log(Pdot) ≈ -15.5 + 0.5 * log(P)
+                    // Convert to actual values: Pdot = 10^(-15.5) * P^0.5
+                    // P is in days, need to convert to seconds for physics
+                    const pRangeSeconds = [dataXMin * 86400, dataXMax * 86400];
+                    const deathLinePoints = [];
+                    for (let logP = Math.log10(pRangeSeconds[0]); logP <= Math.log10(pRangeSeconds[1]); logP += 0.1) {
+                        const pSeconds = Math.pow(10, logP);
+                        const pdot = Math.pow(10, -15.5 + 0.5 * logP);
+                        deathLinePoints.push({ p: pSeconds / 86400, pdot: pdot });
+                    }
+
+                    // Add death line as a series of connected segments
+                    for (let i = 0; i < deathLinePoints.length - 1; i++) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: deathLinePoints[i].p,
+                            x1: deathLinePoints[i + 1].p,
+                            y0: deathLinePoints[i].pdot,
+                            y1: deathLinePoints[i + 1].pdot,
+                            line: { color: '#ff0000', width: 2.5, dash: 'dash' },
+                            layer: 'below'
+                        });
+                    }
+
+                    // Add age contour lines: Pdot = P / (2 * age)
+                    // Age in seconds, P in seconds, Pdot is dimensionless (s/s)
+                    const ageContours = [
+                        { years: 1e3, label: '1 kyr', color: '#888888' },
+                        { years: 1e6, label: '1 Myr', color: '#888888' },
+                        { years: 1e9, label: '1 Gyr', color: '#888888' }
+                    ];
+
+                    ageContours.forEach(({ years, label, color }) => {
+                        const ageSeconds = years * 365.25 * 86400;
+                        const ageLinePoints = [];
+
+                        for (let logP = Math.log10(pRangeSeconds[0]); logP <= Math.log10(pRangeSeconds[1]); logP += 0.1) {
+                            const pSeconds = Math.pow(10, logP);
+                            const pdot = pSeconds / (2 * ageSeconds);
+                            ageLinePoints.push({ p: pSeconds / 86400, pdot: pdot });
+                        }
+
+                        // Add age line as connected segments
+                        for (let i = 0; i < ageLinePoints.length - 1; i++) {
+                            layout.shapes.push({
+                                type: 'line',
+                                x0: ageLinePoints[i].p,
+                                x1: ageLinePoints[i + 1].p,
+                                y0: ageLinePoints[i].pdot,
+                                y1: ageLinePoints[i + 1].pdot,
+                                line: { color: color, width: 1.5, dash: 'dot' },
+                                layer: 'below'
+                            });
+                        }
+
+                        // Add label annotation at the right end
+                        const lastPoint = ageLinePoints[ageLinePoints.length - 1];
+                        layout.annotations.push({
+                            x: Math.log10(lastPoint.p),
+                            y: Math.log10(lastPoint.pdot),
+                            text: label,
+                            showarrow: false,
+                            font: { color: color, size: 11 },
+                            xanchor: 'left',
+                            xshift: 5
+                        });
+                    });
+                }
+
                 Plotly.newPlot(plotDiv, [trace], layout, {
                     responsive: true,
                     displayModeBar: true
@@ -837,6 +936,14 @@
                     if (2.5 >= dataXMin && 2.5 <= dataXMax) {
                         legendHTML += '<span style="color: #9933ff; font-size: 14px;">⋯⋯⋯ TOV Limit (2.5 M☉)</span>';
                     }
+                    legendHTML += '</div>';
+                    plotDiv.insertAdjacentHTML('afterend', legendHTML);
+                }
+
+                if (tabIndex === 6) {
+                    let legendHTML = '<div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block;">';
+                    legendHTML += '<span style="color: #ff0000; font-size: 14px; margin-right: 20px;">--- Death Line</span>';
+                    legendHTML += '<span style="color: #888888; font-size: 14px;">⋯⋯⋯ Constant Age Lines</span>';
                     legendHTML += '</div>';
                     plotDiv.insertAdjacentHTML('afterend', legendHTML);
                 }
@@ -1021,6 +1128,77 @@
 
                             Plotly.relayout(plotDiv, { shapes: finalShapes });
                             console.log('[Plot ' + tabIndex + '] Updated physics lines to final bounds: X[' + dataXMin + ', ' + dataXMax + '], Y[' + dataYMin + ', ' + dataYMax + ']');
+                        }
+
+                        // Update P-Pdot diagram lines with final data bounds
+                        if (tabIndex === 6) {
+                            const finalShapes = [];
+                            const finalAnnotations = [];
+
+                            // Death line with final bounds
+                            const pRangeSeconds = [dataXMin * 86400, dataXMax * 86400];
+                            const deathLinePoints = [];
+                            for (let logP = Math.log10(pRangeSeconds[0]); logP <= Math.log10(pRangeSeconds[1]); logP += 0.1) {
+                                const pSeconds = Math.pow(10, logP);
+                                const pdot = Math.pow(10, -15.5 + 0.5 * logP);
+                                deathLinePoints.push({ p: pSeconds / 86400, pdot: pdot });
+                            }
+
+                            for (let i = 0; i < deathLinePoints.length - 1; i++) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: deathLinePoints[i].p,
+                                    x1: deathLinePoints[i + 1].p,
+                                    y0: deathLinePoints[i].pdot,
+                                    y1: deathLinePoints[i + 1].pdot,
+                                    line: { color: '#ff0000', width: 2.5, dash: 'dash' },
+                                    layer: 'below'
+                                });
+                            }
+
+                            // Age contours with final bounds
+                            const ageContours = [
+                                { years: 1e3, label: '1 kyr', color: '#888888' },
+                                { years: 1e6, label: '1 Myr', color: '#888888' },
+                                { years: 1e9, label: '1 Gyr', color: '#888888' }
+                            ];
+
+                            ageContours.forEach(({ years, label, color }) => {
+                                const ageSeconds = years * 365.25 * 86400;
+                                const ageLinePoints = [];
+
+                                for (let logP = Math.log10(pRangeSeconds[0]); logP <= Math.log10(pRangeSeconds[1]); logP += 0.1) {
+                                    const pSeconds = Math.pow(10, logP);
+                                    const pdot = pSeconds / (2 * ageSeconds);
+                                    ageLinePoints.push({ p: pSeconds / 86400, pdot: pdot });
+                                }
+
+                                for (let i = 0; i < ageLinePoints.length - 1; i++) {
+                                    finalShapes.push({
+                                        type: 'line',
+                                        x0: ageLinePoints[i].p,
+                                        x1: ageLinePoints[i + 1].p,
+                                        y0: ageLinePoints[i].pdot,
+                                        y1: ageLinePoints[i + 1].pdot,
+                                        line: { color: color, width: 1.5, dash: 'dot' },
+                                        layer: 'below'
+                                    });
+                                }
+
+                                const lastPoint = ageLinePoints[ageLinePoints.length - 1];
+                                finalAnnotations.push({
+                                    x: Math.log10(lastPoint.p),
+                                    y: Math.log10(lastPoint.pdot),
+                                    text: label,
+                                    showarrow: false,
+                                    font: { color: color, size: 11 },
+                                    xanchor: 'left',
+                                    xshift: 5
+                                });
+                            });
+
+                            Plotly.relayout(plotDiv, { shapes: finalShapes, annotations: finalAnnotations });
+                            console.log('[Plot ' + tabIndex + '] Updated P-Pdot physics lines to final bounds');
                         }
 
                         clearInterval(progressInterval);
