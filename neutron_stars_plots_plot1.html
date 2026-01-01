@@ -248,7 +248,8 @@
                     plot_bgcolor: '#1a1a1a',
                     font: { color: '#fff' },
                     hovermode: 'closest',
-                    autosize: true,
+                    autosize: false,
+                    width: null,
                     height: 700,
                     margin: { l: 80, r: 80, t: 80, b: 80 }
                 };
@@ -538,7 +539,8 @@
                 plot_bgcolor: '#1a1a1a',
                 font: { color: '#fff' },
                 hovermode: 'closest',
-                autosize: true,
+                autosize: false,
+                width: null,
                 height: 700,
                 margin: { l: 80, r: 80, t: 80, b: 80 }
             };
@@ -629,6 +631,23 @@
 
     window.addEventListener('DOMContentLoaded', () => {
         loadAndStreamData();
+    });
+
+    // Handle window resize to prevent plot from vanishing
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            const plotDiv = document.getElementById('plot');
+            if (plotDiv && plotDiv.data && plotDiv.layout) {
+                const container = plotDiv.parentElement;
+                const width = container.offsetWidth;
+                Plotly.relayout(plotDiv, {
+                    width: width,
+                    height: 700
+                });
+            }
+        }, 100);
     });
 </script>
 </body>
