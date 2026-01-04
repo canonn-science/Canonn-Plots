@@ -835,6 +835,21 @@
                         }
                     ];
 
+                    // Add Chandrasekhar limit line if 1.4 is within data range
+                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 1.4,
+                            x1: 1.4,
+                            y0: dataYMin,
+                            y1: dataYMax,
+                            line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+
                     // Only add TOV limit line if 2.5 is within data range
                     if (2.5 >= dataXMin && 2.5 <= dataXMax) {
                         layout.shapes.push({
@@ -934,6 +949,9 @@
                 if (tabIndex === 5) {
                     let legendHTML = '<div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block;">';
                     legendHTML += '<span style="color: #ff0000; font-size: 14px; margin-right: 20px;">⋯⋯⋯ Schwarzschild Radius</span>';
+                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                        legendHTML += '<span style="color: #00ccff; font-size: 14px; margin-right: 20px;">⋯⋯⋯ Chandrasekhar Limit (1.4 M☉)</span>';
+                    }
                     if (2.5 >= dataXMin && 2.5 <= dataXMax) {
                         legendHTML += '<span style="color: #9933ff; font-size: 14px;">⋯⋯⋯ TOV Limit (2.5 M☉)</span>';
                     }
