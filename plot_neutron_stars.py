@@ -118,6 +118,83 @@ def extract_neutron_stars(gz_path, max_points=None, progress_interval=200000):
                         mass = None
                     if temperature is not None and isnan(temperature):
                         temperature = None
+
+                    # Check for close companion that could contribute to accretion
+                    has_close_companion = 0
+                    parents = b.get("parents") or []
+                    if parents and len(parents) > 0:
+                        immediate_parent = parents[0]
+                        # If immediate parent is Null (barycenter), it's in a binary system
+                        if "Null" in immediate_parent:
+                            barycenter_id = immediate_parent["Null"]
+                            neutron_body_id = b.get("bodyId")
+                            neutron_sma = try_float(
+                                get_first("semiMajorAxis", "orbitalRadius", src=b)
+                            )
+
+                            # Find companions that share the same barycenter parent
+                            for companion in bodies:
+                                companion_parents = companion.get("parents") or []
+                                if not companion_parents:
+                                    continue
+                                comp_immediate_parent = companion_parents[0]
+
+                                # Check if this body shares the same barycenter
+                                if "Null" in comp_immediate_parent:
+                                    comp_barycenter_id = comp_immediate_parent["Null"]
+                                    comp_body_id = companion.get("bodyId")
+
+                                    if (
+                                        comp_barycenter_id == barycenter_id
+                                        and comp_body_id != neutron_body_id
+                                    ):
+                                        # Found a sibling in the binary system
+                                        comp_type = companion.get("type") or ""
+                                        comp_subtype = (
+                                            companion.get("subType")
+                                            or companion.get("subtype")
+                                            or ""
+                                        )
+
+                                        # Only consider stellar companions (not planets)
+                                        if comp_type == "Star":
+                                            comp_sma = try_float(
+                                                get_first(
+                                                    "semiMajorAxis",
+                                                    "orbitalRadius",
+                                                    src=companion,
+                                                )
+                                            )
+                                            comp_radius = try_float(
+                                                get_first(
+                                                    "solarRadius",
+                                                    "radius",
+                                                    "stellarRadius",
+                                                    src=companion,
+                                                )
+                                            )
+
+                                            # Calculate orbital separation
+                                            if (
+                                                neutron_sma is not None
+                                                and comp_sma is not None
+                                            ):
+                                                # Total separation is sum of semi-major axes (in LS)
+                                                separation_ls = neutron_sma + comp_sma
+                                                # Convert to solar radii (1 LS ≈ 215.03 solar radii)
+                                                separation_sr = separation_ls * 215.03
+
+                                                # For accretion, typically need separation < ~1000 solar radii
+                                                # and companion should be large enough (not a tiny star)
+                                                # Conservative threshold: < 500 SR for close binaries
+                                                if (
+                                                    separation_sr < 500
+                                                    and comp_radius is not None
+                                                    and comp_radius > 0.1
+                                                ):
+                                                    has_close_companion = 1
+                                                    break
+
                     points.append(
                         {
                             "system": sys_name,
@@ -127,6 +204,7 @@ def extract_neutron_stars(gz_path, max_points=None, progress_interval=200000):
                             "age": age,
                             "mass": mass,
                             "temperature": temperature,
+                            "hasCloseCompanion": has_close_companion,
                         }
                     )
                     stars_found += 1
@@ -193,6 +271,7 @@ def write_csv_cache(points, csv_path):
             "age",
             "mass",
             "temperature",
+            "hasCloseCompanion",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -206,6 +285,7 @@ def write_csv_cache(points, csv_path):
                     "age": point["age"],
                     "mass": point["mass"],
                     "temperature": point["temperature"],
+                    "hasCloseCompanion": point["hasCloseCompanion"],
                 }
             )
 
@@ -241,6 +321,7 @@ def read_csv_cache(csv_path):
                         if row["temperature"] and row["temperature"] != "None"
                         else None
                     ),
+                    "hasCloseCompanion": int(row["hasCloseCompanion"]),
                 }
             )
 
