@@ -153,6 +153,8 @@
         <button class="tab" onclick="showTab(4)">Temperature vs Age</button>
         <button class="tab" onclick="showTab(5)">Mass vs Radius</button>
         <button class="tab" onclick="showTab(6)">P-Ṗ Diagram</button>
+        <button class="tab" onclick="showTab(7)">Rotational Period vs Mass</button>
+        <button class="tab" onclick="showTab(8)">Mass vs Age</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -219,6 +221,24 @@
         </div>
     </div>
 
+    <div id="tab7" class="tab-content">
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
+        </div>
+        <div class="plot-container">
+            <div id="plot-7" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-7"></div>
+        </div>
+    </div>
+
+    <div id="tab8" class="tab-content">
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
+        </div>
+        <div class="plot-container">
+            <div id="plot-8" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-8"></div>
+        </div>
+    </div>
+
     <script>
         const CSV_PATH = 'neutron_stars_plots_cache.csv.gz';
         const INITIAL_CHUNK_SIZE = 50000;
@@ -235,7 +255,9 @@
             { x: 'age', y: 'tangentialVelocity', color: 'mass', title: 'Tangential Velocity vs Age (color=mass)', xlabel: 'Age', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Mass (M☉)', colorscale: 'plasma', reference_line: 299792 },
             { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (R☉)', colorscale: 'plasma' },
             { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
-            { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true }
+            { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true },
+            { x: 'mass', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
+            { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' }
         ];
 
         let csvData = [];
@@ -780,11 +802,68 @@
                     plot_bgcolor: '#1a1a1a',
                     font: { color: '#fff' },
                     hovermode: 'closest',
-                    autosize: false,
-                    width: null,
+                    autosize: true,
                     height: 700,
-                    margin: { l: 80, r: 80, t: 80, b: 80 },
-                    showlegend: false
+                    margin: { l: 80, r: 80, t: 80, b: 120 },
+                    showlegend: false,
+                    updatemenus: [
+                        {
+                            type: 'buttons',
+                            direction: 'left',
+                            x: 0.1,
+                            y: 1.15,
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            buttons: [
+                                {
+                                    label: 'X: Log',
+                                    method: 'relayout',
+                                    args: [{ 'xaxis.type': 'log' }],
+                                    bgcolor: '#0A4D1A',
+                                    font: { color: '#000000' }
+                                },
+                                {
+                                    label: 'X: Linear',
+                                    method: 'relayout',
+                                    args: [{ 'xaxis.type': 'linear' }],
+                                    bgcolor: '#2C2C2C',
+                                    font: { color: '#000000' }
+                                }
+                            ],
+                            bgcolor: '#2C2C2C',
+                            font: { color: '#000000', size: 13 },
+                            bordercolor: '#666666',
+                            borderwidth: 2
+                        },
+                        {
+                            type: 'buttons',
+                            direction: 'left',
+                            x: 0.3,
+                            y: 1.15,
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            buttons: [
+                                {
+                                    label: 'Y: Log',
+                                    method: 'relayout',
+                                    args: [{ 'yaxis.type': 'log' }],
+                                    bgcolor: '#0A4D1A',
+                                    font: { color: '#000000' }
+                                },
+                                {
+                                    label: 'Y: Linear',
+                                    method: 'relayout',
+                                    args: [{ 'yaxis.type': 'linear' }],
+                                    bgcolor: '#2C2C2C',
+                                    font: { color: '#000000' }
+                                }
+                            ],
+                            bgcolor: '#2C2C2C',
+                            font: { color: '#000000', size: 13 },
+                            bordercolor: '#666666',
+                            borderwidth: 2
+                        }
+                    ]
                 };
 
                 // Add reference lines and annotations
@@ -858,6 +937,76 @@
                             x1: 2.5,
                             y0: dataYMin,
                             y1: dataYMax,
+                            line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+                }
+
+                // Add physics constraint lines for Rotational Period vs Mass plot (plot index 7)
+                if (tabIndex === 7) {
+                    layout.shapes = [];
+
+                    // Add Chandrasekhar limit line if 1.4 is within data range
+                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 1.4,
+                            x1: 1.4,
+                            y0: dataYMin,
+                            y1: dataYMax,
+                            line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+
+                    // Add TOV limit line if 2.5 is within data range
+                    if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 2.5,
+                            x1: 2.5,
+                            y0: dataYMin,
+                            y1: dataYMax,
+                            line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+                }
+
+                // Add physics constraint lines for Mass vs Age plot (plot index 8)
+                if (tabIndex === 8) {
+                    layout.shapes = [];
+
+                    // Add Chandrasekhar limit line if 1.4 is within data range (horizontal line)
+                    if (1.4 >= dataYMin && 1.4 <= dataYMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: dataXMin,
+                            x1: dataXMax,
+                            y0: 1.4,
+                            y1: 1.4,
+                            line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+
+                    // Add TOV limit line if 2.5 is within data range (horizontal line)
+                    if (2.5 >= dataYMin && 2.5 <= dataYMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: dataXMin,
+                            x1: dataXMax,
+                            y0: 2.5,
+                            y1: 2.5,
                             line: { color: '#9933ff', width: 2.5, dash: 'dot' },
                             layer: 'below',
                             xref: 'x',
@@ -947,24 +1096,162 @@
 
                 // Add legend key for physics constraint lines
                 if (tabIndex === 5) {
-                    let legendHTML = '<div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block;">';
-                    legendHTML += '<span style="color: #ff0000; font-size: 14px; margin-right: 20px;">⋯⋯⋯ Schwarzschild Radius</span>';
+                    layout.annotations = layout.annotations || [];
+                    let xPos = 0.02;
+
+                    layout.annotations.push({
+                        x: xPos,
+                        y: -0.15,
+                        xref: 'paper',
+                        yref: 'paper',
+                        text: '⋯⋯⋯ Schwarzschild Radius',
+                        showarrow: false,
+                        font: { color: '#ff0000', size: 12 },
+                        xanchor: 'left',
+                        yanchor: 'top',
+                        bgcolor: 'rgba(0,0,0,0.5)',
+                        borderpad: 4
+                    });
+
                     if (1.4 >= dataXMin && 1.4 <= dataXMax) {
-                        legendHTML += '<span style="color: #00ccff; font-size: 14px; margin-right: 20px;">⋯⋯⋯ Chandrasekhar Limit (1.4 M☉)</span>';
+                        xPos += 0.25;
+                        layout.annotations.push({
+                            x: xPos,
+                            y: -0.15,
+                            xref: 'paper',
+                            yref: 'paper',
+                            text: '⋯⋯⋯ Chandrasekhar Limit (1.4 M☉)',
+                            showarrow: false,
+                            font: { color: '#00ccff', size: 12 },
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            borderpad: 4
+                        });
                     }
+
                     if (2.5 >= dataXMin && 2.5 <= dataXMax) {
-                        legendHTML += '<span style="color: #9933ff; font-size: 14px;">⋯⋯⋯ TOV Limit (2.5 M☉)</span>';
+                        xPos += 0.35;
+                        layout.annotations.push({
+                            x: xPos,
+                            y: -0.15,
+                            xref: 'paper',
+                            yref: 'paper',
+                            text: '⋯⋯⋯ TOV Limit (2.5 M☉)',
+                            showarrow: false,
+                            font: { color: '#9933ff', size: 12 },
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            borderpad: 4
+                        });
                     }
-                    legendHTML += '</div>';
-                    plotDiv.insertAdjacentHTML('afterend', legendHTML);
                 }
 
                 if (tabIndex === 6) {
-                    let legendHTML = '<div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 4px; display: inline-block;">';
-                    legendHTML += '<span style="color: #ff0000; font-size: 14px; margin-right: 20px;">--- Death Line</span>';
-                    legendHTML += '<span style="color: #888888; font-size: 14px;">⋯⋯⋯ Constant Age Lines</span>';
-                    legendHTML += '</div>';
-                    plotDiv.insertAdjacentHTML('afterend', legendHTML);
+                    layout.annotations = layout.annotations || [];
+                    layout.annotations.push({
+                        x: 0.02,
+                        y: -0.15,
+                        xref: 'paper',
+                        yref: 'paper',
+                        text: '--- Death Line',
+                        showarrow: false,
+                        font: { color: '#ff0000', size: 12 },
+                        xanchor: 'left',
+                        yanchor: 'top',
+                        bgcolor: 'rgba(0,0,0,0.5)',
+                        borderpad: 4
+                    });
+                    layout.annotations.push({
+                        x: 0.22,
+                        y: -0.15,
+                        xref: 'paper',
+                        yref: 'paper',
+                        text: '⋯⋯⋯ Constant Age Lines',
+                        showarrow: false,
+                        font: { color: '#888888', size: 12 },
+                        xanchor: 'left',
+                        yanchor: 'top',
+                        bgcolor: 'rgba(0,0,0,0.5)',
+                        borderpad: 4
+                    });
+                }
+
+                if (tabIndex === 7) {
+                    layout.annotations = layout.annotations || [];
+                    let xPos = 0.02;
+
+                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                        layout.annotations.push({
+                            x: xPos,
+                            y: -0.15,
+                            xref: 'paper',
+                            yref: 'paper',
+                            text: '⋯⋯⋯ Chandrasekhar Limit (1.4 M☉)',
+                            showarrow: false,
+                            font: { color: '#00ccff', size: 12 },
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            borderpad: 4
+                        });
+                        xPos += 0.35;
+                    }
+
+                    if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                        layout.annotations.push({
+                            x: xPos,
+                            y: -0.15,
+                            xref: 'paper',
+                            yref: 'paper',
+                            text: '⋯⋯⋯ TOV Limit (2.5 M☉)',
+                            showarrow: false,
+                            font: { color: '#9933ff', size: 12 },
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            borderpad: 4
+                        });
+                    }
+                }
+
+                if (tabIndex === 8) {
+                    layout.annotations = layout.annotations || [];
+                    let xPos = 0.02;
+
+                    if (1.4 >= dataYMin && 1.4 <= dataYMax) {
+                        layout.annotations.push({
+                            x: xPos,
+                            y: -0.15,
+                            xref: 'paper',
+                            yref: 'paper',
+                            text: '⋯⋯⋯ Chandrasekhar Limit (1.4 M☉)',
+                            showarrow: false,
+                            font: { color: '#00ccff', size: 12 },
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            borderpad: 4
+                        });
+                        xPos += 0.35;
+                    }
+
+                    if (2.5 >= dataYMin && 2.5 <= dataYMax) {
+                        layout.annotations.push({
+                            x: xPos,
+                            y: -0.15,
+                            xref: 'paper',
+                            yref: 'paper',
+                            text: '⋯⋯⋯ TOV Limit (2.5 M☉)',
+                            showarrow: false,
+                            font: { color: '#9933ff', size: 12 },
+                            xanchor: 'left',
+                            yanchor: 'top',
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            borderpad: 4
+                        });
+                    }
                 }
 
                 // Add click handler for navigation to Canonn signals
@@ -1131,6 +1418,20 @@
                                 }
                             ];
 
+                            if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: 1.4,
+                                    x1: 1.4,
+                                    y0: dataYMin,
+                                    y1: dataYMax,
+                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
                             if (2.5 >= dataXMin && 2.5 <= dataXMax) {
                                 finalShapes.push({
                                     type: 'line',
@@ -1218,6 +1519,78 @@
 
                             Plotly.relayout(plotDiv, { shapes: finalShapes, annotations: finalAnnotations });
                             console.log('[Plot ' + tabIndex + '] Updated P-Pdot physics lines to final bounds');
+                        }
+
+                        // Update Rotational Period vs Mass plot lines with final data bounds (plot index 7)
+                        if (tabIndex === 7) {
+                            const finalShapes = [];
+
+                            if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: 1.4,
+                                    x1: 1.4,
+                                    y0: dataYMin,
+                                    y1: dataYMax,
+                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: 2.5,
+                                    x1: 2.5,
+                                    y0: dataYMin,
+                                    y1: dataYMax,
+                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            Plotly.relayout(plotDiv, { shapes: finalShapes });
+                            console.log('[Plot ' + tabIndex + '] Updated mass limit lines to final bounds');
+                        }
+
+                        // Update Mass vs Age plot lines with final data bounds (plot index 8)
+                        if (tabIndex === 8) {
+                            const finalShapes = [];
+
+                            if (1.4 >= dataYMin && 1.4 <= dataYMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: dataXMin,
+                                    x1: dataXMax,
+                                    y0: 1.4,
+                                    y1: 1.4,
+                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            if (2.5 >= dataYMin && 2.5 <= dataYMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: dataXMin,
+                                    x1: dataXMax,
+                                    y0: 2.5,
+                                    y1: 2.5,
+                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            Plotly.relayout(plotDiv, { shapes: finalShapes });
+                            console.log('[Plot ' + tabIndex + '] Updated mass limit lines to final bounds');
                         }
 
                         clearInterval(progressInterval);
