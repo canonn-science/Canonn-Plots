@@ -251,7 +251,8 @@
     </div>
 
     <div id="tab10" class="tab-content">
-        <div class="help"><strong>Distributions:</strong> Histograms showing the distribution of various neutron star parameters.
+        <div class="help"><strong>Distributions:</strong> Histograms showing the distribution of various neutron star
+            parameters.
         </div>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
             <div class="plot-container">
@@ -289,12 +290,12 @@
         let dataWorker = null;
 
         const plots = [
-            { x: 'solarRadius', y: 'rotationalPeriod', color: 'age', title: 'Radius vs Rotational Period (color=age)', xlabel: 'Solar Radius (R☉)', ylabel: 'Rotational Period', colorbar: 'Age', colorscale: 'viridis' },
-            { x: 'age', y: 'rotationalPeriod', color: 'solarRadius', title: 'Rotational Period vs Age (color=radius)', xlabel: 'Age', ylabel: 'Rotational Period', colorbar: 'Radius (R☉)', colorscale: 'plasma' },
-            { x: 'age', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Age (color=rotational period)', xlabel: 'Age', ylabel: 'Solar Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
+            { x: 'solarRadius', y: 'rotationalPeriod', color: 'age', title: 'Radius vs Rotational Period (color=age)', xlabel: 'Radius (km)', ylabel: 'Rotational Period', colorbar: 'Age', colorscale: 'viridis' },
+            { x: 'age', y: 'rotationalPeriod', color: 'solarRadius', title: 'Rotational Period vs Age (color=radius)', xlabel: 'Age', ylabel: 'Rotational Period', colorbar: 'Radius (km)', colorscale: 'plasma' },
+            { x: 'age', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Age (color=rotational period)', xlabel: 'Age', ylabel: 'Radius (km)', colorbar: 'Rotational Period', colorscale: 'viridis' },
             { x: 'age', y: 'tangentialVelocity', color: 'mass', title: 'Tangential Velocity vs Age (color=mass)', xlabel: 'Age', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Mass (M☉)', colorscale: 'plasma', reference_line: 299792 },
-            { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (R☉)', colorscale: 'plasma' },
-            { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
+            { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (km)', colorscale: 'plasma' },
+            { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (km)', colorbar: 'Rotational Period', colorscale: 'viridis' },
             { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true },
             { x: 'mass', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
             { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' },
@@ -395,13 +396,12 @@
                 // Format hover text with proper units (inside worker for speed)
                 function formatHoverText(row) {
                     const SPEED_OF_LIGHT = 299792; // km/s
-                    const radiusKm = row.solarRadius * 696000;
                     
                     let hoverParts = ['<b>' + row.system + '</b>'];
                     
-                    // Radius: show both km and solar radius
+                    // Radius: show only in km (already converted)
                     if (row.solarRadius !== undefined) {
-                        hoverParts.push('Radius: ' + radiusKm.toFixed(0) + ' km (' + row.solarRadius.toFixed(3) + ' R☉)');
+                        hoverParts.push('Radius: ' + row.solarRadius.toFixed(0) + ' km');
                     }
                     
                     // Rotational Period: show in km/s or c
@@ -481,10 +481,11 @@
                             
                             const processedRow = {
                                 ...row,
+                                solarRadius: radiusKm,  // Convert to km
                                 tangentialVelocity: tangVel,
                                 periodDerivative: periodDerivative
                             };
-                            // Pre-compute hover text in worker
+                            // Pre-compute hover text in worker (after conversion)
                             processedRow.hoverText = formatHoverText(processedRow);
                             return processedRow;
                         });
@@ -798,7 +799,7 @@
 
                 // Process ALL data at once
                 const processedData = await processWithWorker(csvData, null);
-                
+
                 console.log('[Histograms] Creating histograms with ' + processedData.length + ' total points');
 
                 // Extract all values from complete dataset
@@ -808,9 +809,9 @@
                 const massValues = processedData.map(r => r.mass).filter(v => v !== null && v !== undefined);
                 const tempValues = processedData.map(r => r.temperature).filter(v => v !== null && v !== undefined);
                 const velocityValues = processedData.map(r => r.tangentialVelocity).filter(v => v !== null && v !== undefined);
-                
+
                 console.log('[Histograms] Value counts - radius: ' + radiusValues.length + ', period: ' + periodValues.length + ', age: ' + ageValues.length);
-                
+
                 const spinCounts = { up: 0, down: 0, none: 0 };
                 processedData.forEach(r => {
                     if (r.spin === 'up') spinCounts.up++;
@@ -828,8 +829,8 @@
                         marker: { color: '#4a9eff' },
                         name: 'Radius'
                     }], {
-                        title: 'Solar Radius Distribution',
-                        xaxis: { title: 'Solar Radius (R☉)', gridcolor: '#333' },
+                        title: 'Radius Distribution',
+                        xaxis: { title: 'Radius (km)', gridcolor: '#333' },
                         yaxis: { title: 'Count', gridcolor: '#333' },
                         paper_bgcolor: '#1a1a1a',
                         plot_bgcolor: '#1a1a1a',
@@ -843,20 +844,20 @@
 
                 try {
                     await Plotly.newPlot('hist-period', [{
-                    x: periodValues,
-                    type: 'histogram',
-                    nbinsx: 50,
-                    marker: { color: '#ff6b6b' },
-                    name: 'Period'
-                }], {
-                    title: 'Rotational Period Distribution',
-                    xaxis: { title: 'Rotational Period (days)', gridcolor: '#333' },
-                    yaxis: { title: 'Count', gridcolor: '#333' },
-                    paper_bgcolor: '#1a1a1a',
-                    plot_bgcolor: '#1a1a1a',
-                    font: { color: '#fff' },
-                    height: 380
-                }, { responsive: true });
+                        x: periodValues,
+                        type: 'histogram',
+                        nbinsx: 50,
+                        marker: { color: '#ff6b6b' },
+                        name: 'Period'
+                    }], {
+                        title: 'Rotational Period Distribution',
+                        xaxis: { title: 'Rotational Period (days)', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
                     console.log('[Histograms] Period histogram created');
                 } catch (e) {
                     console.error('[Histograms] Error creating period histogram:', e);
@@ -864,20 +865,20 @@
 
                 try {
                     await Plotly.newPlot('hist-age', [{
-                    x: ageValues,
-                    type: 'histogram',
-                    nbinsx: 50,
-                    marker: { color: '#51cf66' },
-                    name: 'Age'
-                }], {
-                    title: 'Age Distribution',
-                    xaxis: { title: 'Age (Myr)', gridcolor: '#333' },
-                    yaxis: { title: 'Count', gridcolor: '#333' },
-                    paper_bgcolor: '#1a1a1a',
-                    plot_bgcolor: '#1a1a1a',
-                    font: { color: '#fff' },
-                    height: 380
-                }, { responsive: true });
+                        x: ageValues,
+                        type: 'histogram',
+                        nbinsx: 50,
+                        marker: { color: '#51cf66' },
+                        name: 'Age'
+                    }], {
+                        title: 'Age Distribution',
+                        xaxis: { title: 'Age (Myr)', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
                     console.log('[Histograms] Age histogram created');
                 } catch (e) {
                     console.error('[Histograms] Error creating age histogram:', e);
@@ -885,40 +886,40 @@
 
                 try {
                     await Plotly.newPlot('hist-mass', [{
-                    x: massValues,
-                    type: 'histogram',
-                    nbinsx: 50,
-                    marker: { color: '#ffd43b' },
-                    name: 'Mass'
-                }], {
-                    title: 'Mass Distribution',
-                    xaxis: { title: 'Mass (M☉)', gridcolor: '#333' },
-                    yaxis: { title: 'Count', gridcolor: '#333' },
-                    shapes: [
-                        {
-                            type: 'line',
-                            x0: 1.4,
-                            x1: 1.4,
-                            y0: 0,
-                            y1: 1,
-                            yref: 'paper',
-                            line: { color: '#00ccff', width: 2, dash: 'dot' }
-                        },
-                        {
-                            type: 'line',
-                            x0: 2.5,
-                            x1: 2.5,
-                            y0: 0,
-                            y1: 1,
-                            yref: 'paper',
-                            line: { color: '#9933ff', width: 2, dash: 'dot' }
-                        }
-                    ],
-                    paper_bgcolor: '#1a1a1a',
-                    plot_bgcolor: '#1a1a1a',
-                    font: { color: '#fff' },
-                    height: 380
-                }, { responsive: true });
+                        x: massValues,
+                        type: 'histogram',
+                        nbinsx: 50,
+                        marker: { color: '#ffd43b' },
+                        name: 'Mass'
+                    }], {
+                        title: 'Mass Distribution',
+                        xaxis: { title: 'Mass (M☉)', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        shapes: [
+                            {
+                                type: 'line',
+                                x0: 1.4,
+                                x1: 1.4,
+                                y0: 0,
+                                y1: 1,
+                                yref: 'paper',
+                                line: { color: '#00ccff', width: 2, dash: 'dot' }
+                            },
+                            {
+                                type: 'line',
+                                x0: 2.5,
+                                x1: 2.5,
+                                y0: 0,
+                                y1: 1,
+                                yref: 'paper',
+                                line: { color: '#9933ff', width: 2, dash: 'dot' }
+                            }
+                        ],
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
                     console.log('[Histograms] Mass histogram created');
                 } catch (e) {
                     console.error('[Histograms] Error creating mass histogram:', e);
@@ -926,20 +927,20 @@
 
                 try {
                     await Plotly.newPlot('hist-temperature', [{
-                    x: tempValues,
-                    type: 'histogram',
-                    nbinsx: 50,
-                    marker: { color: '#ff8787' },
-                    name: 'Temperature'
-                }], {
-                    title: 'Temperature Distribution',
-                    xaxis: { title: 'Temperature (K)', gridcolor: '#333' },
-                    yaxis: { title: 'Count', gridcolor: '#333' },
-                    paper_bgcolor: '#1a1a1a',
-                    plot_bgcolor: '#1a1a1a',
-                    font: { color: '#fff' },
-                    height: 380
-                }, { responsive: true });
+                        x: tempValues,
+                        type: 'histogram',
+                        nbinsx: 50,
+                        marker: { color: '#ff8787' },
+                        name: 'Temperature'
+                    }], {
+                        title: 'Temperature Distribution',
+                        xaxis: { title: 'Temperature (K)', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
                     console.log('[Histograms] Temperature histogram created');
                 } catch (e) {
                     console.error('[Histograms] Error creating temperature histogram:', e);
@@ -947,31 +948,31 @@
 
                 try {
                     await Plotly.newPlot('hist-velocity', [{
-                    x: velocityValues,
-                    type: 'histogram',
-                    nbinsx: 50,
-                    marker: { color: '#b197fc' },
-                    name: 'Velocity'
-                }], {
-                    title: 'Tangential Velocity Distribution',
-                    xaxis: { title: 'Velocity (km/s)', gridcolor: '#333' },
-                    yaxis: { title: 'Count', gridcolor: '#333' },
-                    shapes: [
-                        {
-                            type: 'line',
-                            x0: 299792,
-                            x1: 299792,
-                            y0: 0,
-                            y1: 1,
-                            yref: 'paper',
-                            line: { color: '#ff0000', width: 2, dash: 'dash' }
-                        }
-                    ],
-                    paper_bgcolor: '#1a1a1a',
-                    plot_bgcolor: '#1a1a1a',
-                    font: { color: '#fff' },
-                    height: 380
-                }, { responsive: true });
+                        x: velocityValues,
+                        type: 'histogram',
+                        nbinsx: 50,
+                        marker: { color: '#b197fc' },
+                        name: 'Velocity'
+                    }], {
+                        title: 'Tangential Velocity Distribution',
+                        xaxis: { title: 'Velocity (km/s)', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        shapes: [
+                            {
+                                type: 'line',
+                                x0: 299792,
+                                x1: 299792,
+                                y0: 0,
+                                y1: 1,
+                                yref: 'paper',
+                                line: { color: '#ff0000', width: 2, dash: 'dash' }
+                            }
+                        ],
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
                     console.log('[Histograms] Velocity histogram created');
                 } catch (e) {
                     console.error('[Histograms] Error creating velocity histogram:', e);
@@ -982,7 +983,7 @@
                         x: ['Up', 'Down', 'None'],
                         y: [spinCounts.up, spinCounts.down, spinCounts.none],
                         type: 'bar',
-                        marker: { 
+                        marker: {
                             color: ['#00FF00', '#FF0000', '#FFA500']
                         },
                         name: 'Spin'
@@ -1119,8 +1120,9 @@
 
                 // Add physics constraint lines for Mass vs Radius plot (plot index 5)
                 if (tabIndex === 5) {
-                    // Schwarzschild radius: R = 2.95 km * M (solar masses) / 696000 km = 0.00000424 * M
-                    const schwarzschildSlope = 0.00000424;
+                    // Schwarzschild radius: R = 2.95 km * M (solar masses)
+                    // Now that radius is in km, the slope is just 2.95
+                    const schwarzschildSlope = 2.95;
 
                     // Calculate Schwarzschild line endpoints constrained to data Y bounds
                     let schwY0 = dataXMin * schwarzschildSlope;
