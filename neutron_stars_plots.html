@@ -155,6 +155,8 @@
         <button class="tab" onclick="showTab(6)">P-Ṗ Diagram</button>
         <button class="tab" onclick="showTab(7)">Rotational Period vs Mass</button>
         <button class="tab" onclick="showTab(8)">Mass vs Age</button>
+        <button class="tab" onclick="showTab(9)">Tangential Velocity vs Mass</button>
+        <button class="tab" onclick="showTab(10)">Histograms</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -239,6 +241,44 @@
         </div>
     </div>
 
+    <div id="tab9" class="tab-content">
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot streams data as it loads.
+        </div>
+        <div class="plot-container">
+            <div id="plot-9" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-9"></div>
+        </div>
+    </div>
+
+    <div id="tab10" class="tab-content">
+        <div class="help"><strong>Distributions:</strong> Histograms showing the distribution of various neutron star parameters.
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+            <div class="plot-container">
+                <div id="hist-radius" style="width:100%;height:400px;"></div>
+            </div>
+            <div class="plot-container">
+                <div id="hist-period" style="width:100%;height:400px;"></div>
+            </div>
+            <div class="plot-container">
+                <div id="hist-age" style="width:100%;height:400px;"></div>
+            </div>
+            <div class="plot-container">
+                <div id="hist-mass" style="width:100%;height:400px;"></div>
+            </div>
+            <div class="plot-container">
+                <div id="hist-temperature" style="width:100%;height:400px;"></div>
+            </div>
+            <div class="plot-container">
+                <div id="hist-velocity" style="width:100%;height:400px;"></div>
+            </div>
+            <div class="plot-container">
+                <div id="hist-spin" style="width:100%;height:400px;"></div>
+            </div>
+        </div>
+        <div class="loading" id="loading-10"></div>
+    </div>
+
     <script>
         const CSV_PATH = 'neutron_stars_plots_cache.csv.gz';
         const INITIAL_CHUNK_SIZE = 50000;
@@ -257,7 +297,8 @@
             { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (R☉)', colorbar: 'Rotational Period', colorscale: 'viridis' },
             { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true },
             { x: 'mass', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
-            { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' }
+            { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' },
+            { x: 'mass', y: 'tangentialVelocity', color: 'age', title: 'Tangential Velocity vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', reference_line: 299792 }
         ];
 
         let csvData = [];
@@ -340,6 +381,11 @@
                 hoverParts.push(`Mass: ${row.mass.toFixed(3)} M☉`);
             }
 
+            // Spin state
+            if (row.spin !== undefined) {
+                hoverParts.push(`Spin: ${row.spin}`);
+            }
+
             return hoverParts.join('<br>');
         }
 
@@ -409,6 +455,11 @@
                     // Mass in solar masses
                     if (row.mass !== undefined) {
                         hoverParts.push('Mass: ' + row.mass.toFixed(3) + ' M☉');
+                    }
+                    
+                    // Spin state
+                    if (row.spin !== undefined) {
+                        hoverParts.push('Spin: ' + row.spin);
                     }
                     
                     return hoverParts.join('<br>');
@@ -706,7 +757,11 @@
 
             if (!loadedTabs.has(index)) {
                 console.log('[Tab ' + index + '] Loading plot...');
-                loadAndStreamData(index);
+                if (index === 10) {
+                    loadHistograms(index);
+                } else {
+                    loadAndStreamData(index);
+                }
             } else {
                 console.log('[Tab ' + index + '] Already loaded');
                 // Ensure loading div shows completion status, not spinner
@@ -715,6 +770,243 @@
                     const totalPoints = csvData.length;
                     loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + totalPoints.toLocaleString() + ' data points</div>';
                 }
+            }
+        }
+
+        async function loadHistograms(tabIndex) {
+            const loadingDiv = document.getElementById('loading-' + tabIndex);
+            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
+
+            // Wait a moment for tab to fully render
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                // Get initial data
+                const data = await loadCSVStreaming();
+                if (!data) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
+                    return;
+                }
+
+                // Wait for CSV to completely load
+                while (!csvComplete) {
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+
+                loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + csvData.length.toLocaleString() + ' data points...';
+
+                // Process ALL data at once
+                const processedData = await processWithWorker(csvData, null);
+                
+                console.log('[Histograms] Creating histograms with ' + processedData.length + ' total points');
+
+                // Extract all values from complete dataset
+                const radiusValues = processedData.map(r => r.solarRadius).filter(v => v !== null && v !== undefined);
+                const periodValues = processedData.map(r => r.rotationalPeriod).filter(v => v !== null && v !== undefined);
+                const ageValues = processedData.map(r => r.age).filter(v => v !== null && v !== undefined);
+                const massValues = processedData.map(r => r.mass).filter(v => v !== null && v !== undefined);
+                const tempValues = processedData.map(r => r.temperature).filter(v => v !== null && v !== undefined);
+                const velocityValues = processedData.map(r => r.tangentialVelocity).filter(v => v !== null && v !== undefined);
+                
+                console.log('[Histograms] Value counts - radius: ' + radiusValues.length + ', period: ' + periodValues.length + ', age: ' + ageValues.length);
+                
+                const spinCounts = { up: 0, down: 0, none: 0 };
+                processedData.forEach(r => {
+                    if (r.spin === 'up') spinCounts.up++;
+                    else if (r.spin === 'down') spinCounts.down++;
+                    else if (r.spin === 'none') spinCounts.none++;
+                });
+
+                // Create histograms
+                console.log('[Histograms] Creating radius histogram...');
+                try {
+                    await Plotly.newPlot('hist-radius', [{
+                        x: radiusValues,
+                        type: 'histogram',
+                        nbinsx: 50,
+                        marker: { color: '#4a9eff' },
+                        name: 'Radius'
+                    }], {
+                        title: 'Solar Radius Distribution',
+                        xaxis: { title: 'Solar Radius (R☉)', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
+                    console.log('[Histograms] Radius histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating radius histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-period', [{
+                    x: periodValues,
+                    type: 'histogram',
+                    nbinsx: 50,
+                    marker: { color: '#ff6b6b' },
+                    name: 'Period'
+                }], {
+                    title: 'Rotational Period Distribution',
+                    xaxis: { title: 'Rotational Period (days)', gridcolor: '#333' },
+                    yaxis: { title: 'Count', gridcolor: '#333' },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    height: 380
+                }, { responsive: true });
+                    console.log('[Histograms] Period histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating period histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-age', [{
+                    x: ageValues,
+                    type: 'histogram',
+                    nbinsx: 50,
+                    marker: { color: '#51cf66' },
+                    name: 'Age'
+                }], {
+                    title: 'Age Distribution',
+                    xaxis: { title: 'Age (Myr)', gridcolor: '#333' },
+                    yaxis: { title: 'Count', gridcolor: '#333' },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    height: 380
+                }, { responsive: true });
+                    console.log('[Histograms] Age histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating age histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-mass', [{
+                    x: massValues,
+                    type: 'histogram',
+                    nbinsx: 50,
+                    marker: { color: '#ffd43b' },
+                    name: 'Mass'
+                }], {
+                    title: 'Mass Distribution',
+                    xaxis: { title: 'Mass (M☉)', gridcolor: '#333' },
+                    yaxis: { title: 'Count', gridcolor: '#333' },
+                    shapes: [
+                        {
+                            type: 'line',
+                            x0: 1.4,
+                            x1: 1.4,
+                            y0: 0,
+                            y1: 1,
+                            yref: 'paper',
+                            line: { color: '#00ccff', width: 2, dash: 'dot' }
+                        },
+                        {
+                            type: 'line',
+                            x0: 2.5,
+                            x1: 2.5,
+                            y0: 0,
+                            y1: 1,
+                            yref: 'paper',
+                            line: { color: '#9933ff', width: 2, dash: 'dot' }
+                        }
+                    ],
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    height: 380
+                }, { responsive: true });
+                    console.log('[Histograms] Mass histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating mass histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-temperature', [{
+                    x: tempValues,
+                    type: 'histogram',
+                    nbinsx: 50,
+                    marker: { color: '#ff8787' },
+                    name: 'Temperature'
+                }], {
+                    title: 'Temperature Distribution',
+                    xaxis: { title: 'Temperature (K)', gridcolor: '#333' },
+                    yaxis: { title: 'Count', gridcolor: '#333' },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    height: 380
+                }, { responsive: true });
+                    console.log('[Histograms] Temperature histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating temperature histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-velocity', [{
+                    x: velocityValues,
+                    type: 'histogram',
+                    nbinsx: 50,
+                    marker: { color: '#b197fc' },
+                    name: 'Velocity'
+                }], {
+                    title: 'Tangential Velocity Distribution',
+                    xaxis: { title: 'Velocity (km/s)', gridcolor: '#333' },
+                    yaxis: { title: 'Count', gridcolor: '#333' },
+                    shapes: [
+                        {
+                            type: 'line',
+                            x0: 299792,
+                            x1: 299792,
+                            y0: 0,
+                            y1: 1,
+                            yref: 'paper',
+                            line: { color: '#ff0000', width: 2, dash: 'dash' }
+                        }
+                    ],
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    height: 380
+                }, { responsive: true });
+                    console.log('[Histograms] Velocity histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating velocity histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-spin', [{
+                        x: ['Up', 'Down', 'None'],
+                        y: [spinCounts.up, spinCounts.down, spinCounts.none],
+                        type: 'bar',
+                        marker: { 
+                            color: ['#00FF00', '#FF0000', '#FFA500']
+                        },
+                        name: 'Spin'
+                    }], {
+                        title: 'Spin State Distribution',
+                        xaxis: { title: 'Spin State', gridcolor: '#333' },
+                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
+                    console.log('[Histograms] Spin histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating spin histogram:', e);
+                }
+
+                console.log('[Histograms] All histograms created with ' + processedData.length + ' total points');
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + csvData.length.toLocaleString() + ' data points</div>';
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Histograms] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading histograms: ' + error.message + '</div>';
             }
         }
 
@@ -794,76 +1086,23 @@
                     hoverinfo: 'text'
                 };
 
+                // Determine axis types based on field names
+                // Log scale for everything EXCEPT age, mass, and radius (solarRadius)
+                const xType = (plotConfig.x === 'age' || plotConfig.x === 'mass' || plotConfig.x === 'solarRadius') ? 'linear' : 'log';
+                const yType = (plotConfig.y === 'age' || plotConfig.y === 'mass' || plotConfig.y === 'solarRadius') ? 'linear' : 'log';
+
                 const layout = {
                     title: plotConfig.title,
-                    xaxis: { title: plotConfig.xlabel, type: 'log' },
-                    yaxis: { title: plotConfig.ylabel, type: 'log' },
+                    xaxis: { title: plotConfig.xlabel, type: xType },
+                    yaxis: { title: plotConfig.ylabel, type: yType },
                     paper_bgcolor: '#1a1a1a',
                     plot_bgcolor: '#1a1a1a',
                     font: { color: '#fff' },
                     hovermode: 'closest',
                     autosize: true,
                     height: 700,
-                    margin: { l: 80, r: 80, t: 80, b: 120 },
-                    showlegend: false,
-                    updatemenus: [
-                        {
-                            type: 'buttons',
-                            direction: 'left',
-                            x: 0.1,
-                            y: 1.15,
-                            xanchor: 'left',
-                            yanchor: 'top',
-                            buttons: [
-                                {
-                                    label: 'X: Log',
-                                    method: 'relayout',
-                                    args: [{ 'xaxis.type': 'log' }],
-                                    bgcolor: '#0A4D1A',
-                                    font: { color: '#000000' }
-                                },
-                                {
-                                    label: 'X: Linear',
-                                    method: 'relayout',
-                                    args: [{ 'xaxis.type': 'linear' }],
-                                    bgcolor: '#2C2C2C',
-                                    font: { color: '#000000' }
-                                }
-                            ],
-                            bgcolor: '#2C2C2C',
-                            font: { color: '#000000', size: 13 },
-                            bordercolor: '#666666',
-                            borderwidth: 2
-                        },
-                        {
-                            type: 'buttons',
-                            direction: 'left',
-                            x: 0.3,
-                            y: 1.15,
-                            xanchor: 'left',
-                            yanchor: 'top',
-                            buttons: [
-                                {
-                                    label: 'Y: Log',
-                                    method: 'relayout',
-                                    args: [{ 'yaxis.type': 'log' }],
-                                    bgcolor: '#0A4D1A',
-                                    font: { color: '#000000' }
-                                },
-                                {
-                                    label: 'Y: Linear',
-                                    method: 'relayout',
-                                    args: [{ 'yaxis.type': 'linear' }],
-                                    bgcolor: '#2C2C2C',
-                                    font: { color: '#000000' }
-                                }
-                            ],
-                            bgcolor: '#2C2C2C',
-                            font: { color: '#000000', size: 13 },
-                            bordercolor: '#666666',
-                            borderwidth: 2
-                        }
-                    ]
+                    margin: { l: 80, r: 80, t: 80, b: 80 },
+                    showlegend: false
                 };
 
                 // Add reference lines and annotations
@@ -1007,6 +1246,45 @@
                             x1: dataXMax,
                             y0: 2.5,
                             y1: 2.5,
+                            line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+                }
+
+                // Add physics constraint lines for Tangential Velocity vs Mass plot (plot index 9)
+                if (tabIndex === 9) {
+                    layout.shapes = layout.shapes || [];
+                    const SPEED_OF_LIGHT = 299792; // km/s
+
+                    // Speed of light line is already added via reference_line property
+                    // Add mass limit lines
+
+                    // Add Chandrasekhar limit line if 1.4 is within data range (vertical line)
+                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 1.4,
+                            x1: 1.4,
+                            y0: dataYMin,
+                            y1: dataYMax,
+                            line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                            layer: 'below',
+                            xref: 'x',
+                            yref: 'y'
+                        });
+                    }
+
+                    // Add TOV limit line if 2.5 is within data range (vertical line)
+                    if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 2.5,
+                            x1: 2.5,
+                            y0: dataYMin,
+                            y1: dataYMax,
                             line: { color: '#9933ff', width: 2.5, dash: 'dot' },
                             layer: 'below',
                             xref: 'x',
@@ -1252,6 +1530,21 @@
                             borderpad: 4
                         });
                     }
+                }
+
+                if (tabIndex === 9) {
+                    layout.annotations = layout.annotations || [];
+                    layout.annotations.push({
+                        x: 0.5,
+                        y: -0.15,
+                        xref: 'paper',
+                        yref: 'paper',
+                        text: 'Chandrasekhar limit (1.4 M☉) | TOV limit (2.5 M☉) | Speed of light (c)',
+                        showarrow: false,
+                        font: { color: '#aaa', size: 11 },
+                        xanchor: 'center',
+                        yanchor: 'top'
+                    });
                 }
 
                 // Add click handler for navigation to Canonn signals
@@ -1591,6 +1884,74 @@
 
                             Plotly.relayout(plotDiv, { shapes: finalShapes });
                             console.log('[Plot ' + tabIndex + '] Updated mass limit lines to final bounds');
+                        }
+
+                        // Update Tangential Velocity vs Mass plot lines with final data bounds (plot index 9)
+                        if (tabIndex === 9) {
+                            const finalShapes = [];
+                            const finalAnnotations = [];
+                            const SPEED_OF_LIGHT = 299792; // km/s
+
+                            // Speed of light horizontal line
+                            if (SPEED_OF_LIGHT >= dataYMin && SPEED_OF_LIGHT <= dataYMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: dataXMin,
+                                    x1: dataXMax,
+                                    y0: SPEED_OF_LIGHT,
+                                    y1: SPEED_OF_LIGHT,
+                                    line: { color: '#ff0000', width: 2.5, dash: 'dash' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            // Chandrasekhar limit (1.4 M☉)
+                            if (1.4 >= dataXMin && 1.4 <= dataXMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: 1.4,
+                                    x1: 1.4,
+                                    y0: dataYMin,
+                                    y1: dataYMax,
+                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            // TOV limit (2.5 M☉)
+                            if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                                finalShapes.push({
+                                    type: 'line',
+                                    x0: 2.5,
+                                    x1: 2.5,
+                                    y0: dataYMin,
+                                    y1: dataYMax,
+                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                                    layer: 'below',
+                                    xref: 'x',
+                                    yref: 'y'
+                                });
+                            }
+
+                            // Add annotations
+                            finalAnnotations.push({
+                                x: 0.5,
+                                y: -0.15,
+                                xref: 'paper',
+                                yref: 'paper',
+                                text: 'Chandrasekhar limit (1.4 M☉) | TOV limit (2.5 M☉) | Speed of light (c)',
+                                showarrow: false,
+                                font: { color: '#aaa', size: 11 },
+                                xanchor: 'center',
+                                yanchor: 'top'
+                            });
+
+                            Plotly.relayout(plotDiv, { shapes: finalShapes, annotations: finalAnnotations });
+                            console.log('[Plot ' + tabIndex + '] Updated velocity and mass limit lines to final bounds');
                         }
 
                         clearInterval(progressInterval);

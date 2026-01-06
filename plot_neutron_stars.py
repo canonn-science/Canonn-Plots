@@ -119,81 +119,123 @@ def extract_neutron_stars(gz_path, max_points=None, progress_interval=200000):
                     if temperature is not None and isnan(temperature):
                         temperature = None
 
-                    # Check for close companion that could contribute to accretion
-                    has_close_companion = 0
-                    parents = b.get("parents") or []
-                    if parents and len(parents) > 0:
-                        immediate_parent = parents[0]
-                        # If immediate parent is Null (barycenter), it's in a binary system
-                        if "Null" in immediate_parent:
-                            barycenter_id = immediate_parent["Null"]
-                            neutron_body_id = b.get("bodyId")
-                            neutron_sma = try_float(
-                                get_first("semiMajorAxis", "orbitalRadius", src=b)
-                            )
+                    # Determine spin direction based on environment
+                    # Planets/rings cause spin-up, binary companions depend on mass ratio
+                    spin = "none"
+                    neutron_body_id = b.get("bodyId")
 
-                            # Find companions that share the same barycenter parent
-                            for companion in bodies:
-                                companion_parents = companion.get("parents") or []
-                                if not companion_parents:
-                                    continue
-                                comp_immediate_parent = companion_parents[0]
+                    # Check for rings (indicate spin-up from accretion disk)
+                    if b.get("rings") or b.get("hasRings"):
+                        spin = "up"
 
-                                # Check if this body shares the same barycenter
-                                if "Null" in comp_immediate_parent:
-                                    comp_barycenter_id = comp_immediate_parent["Null"]
-                                    comp_body_id = companion.get("bodyId")
+                    # Check for planets orbiting the neutron star (spin-up from debris)
+                    if spin == "none":
+                        for body in bodies:
+                            body_parents = body.get("parents") or []
+                            body_type = body.get("type") or ""
+                            # Check if this body is a planet orbiting our neutron star
+                            if body_type == "Planet" and body_parents:
+                                first_parent = body_parents[0]
+                                # Check if neutron star is the direct parent
+                                if (
+                                    "Star" in first_parent
+                                    and first_parent["Star"] == neutron_body_id
+                                ):
+                                    spin = "up"
+                                    break
 
-                                    if (
-                                        comp_barycenter_id == barycenter_id
-                                        and comp_body_id != neutron_body_id
-                                    ):
-                                        # Found a sibling in the binary system
-                                        comp_type = companion.get("type") or ""
-                                        comp_subtype = (
-                                            companion.get("subType")
-                                            or companion.get("subtype")
-                                            or ""
-                                        )
+                    # Check for binary companion (mass-dependent spin evolution)
+                    if spin == "none":
+                        parents = b.get("parents") or []
+                        if parents and len(parents) > 0:
+                            immediate_parent = parents[0]
+                            # If immediate parent is Null (barycenter), it's in a binary system
+                            if "Null" in immediate_parent:
+                                barycenter_id = immediate_parent["Null"]
+                                neutron_sma = try_float(
+                                    get_first("semiMajorAxis", "orbitalRadius", src=b)
+                                )
 
-                                        # Only consider stellar companions (not planets)
-                                        if comp_type == "Star":
-                                            comp_sma = try_float(
-                                                get_first(
-                                                    "semiMajorAxis",
-                                                    "orbitalRadius",
-                                                    src=companion,
+                                # Find stellar companions that share the same barycenter
+                                for companion in bodies:
+                                    companion_parents = companion.get("parents") or []
+                                    if not companion_parents:
+                                        continue
+                                    comp_immediate_parent = companion_parents[0]
+
+                                    # Check if this body shares the same barycenter
+                                    if "Null" in comp_immediate_parent:
+                                        comp_barycenter_id = comp_immediate_parent[
+                                            "Null"
+                                        ]
+                                        comp_body_id = companion.get("bodyId")
+
+                                        if (
+                                            comp_barycenter_id == barycenter_id
+                                            and comp_body_id != neutron_body_id
+                                        ):
+                                            # Found a sibling in the binary system
+                                            comp_type = companion.get("type") or ""
+
+                                            # Only consider stellar companions
+                                            if comp_type == "Star":
+                                                comp_sma = try_float(
+                                                    get_first(
+                                                        "semiMajorAxis",
+                                                        "orbitalRadius",
+                                                        src=companion,
+                                                    )
                                                 )
-                                            )
-                                            comp_radius = try_float(
-                                                get_first(
-                                                    "solarRadius",
-                                                    "radius",
-                                                    "stellarRadius",
-                                                    src=companion,
+                                                comp_mass = try_float(
+                                                    get_first(
+                                                        "solarMasses",
+                                                        "mass",
+                                                        "stellarMass",
+                                                        src=companion,
+                                                    )
                                                 )
-                                            )
 
-                                            # Calculate orbital separation
-                                            if (
-                                                neutron_sma is not None
-                                                and comp_sma is not None
-                                            ):
-                                                # Total separation is sum of semi-major axes (in LS)
-                                                separation_ls = neutron_sma + comp_sma
-                                                # Convert to solar radii (1 LS ≈ 215.03 solar radii)
-                                                separation_sr = separation_ls * 215.03
-
-                                                # For accretion, typically need separation < ~1000 solar radii
-                                                # and companion should be large enough (not a tiny star)
-                                                # Conservative threshold: < 500 SR for close binaries
+                                                # Calculate orbital separation for close binary
                                                 if (
-                                                    separation_sr < 500
-                                                    and comp_radius is not None
-                                                    and comp_radius > 0.1
+                                                    neutron_sma is not None
+                                                    and comp_sma is not None
                                                 ):
-                                                    has_close_companion = 1
-                                                    break
+                                                    # Total separation is sum of semi-major axes (in LS)
+                                                    separation_ls = (
+                                                        neutron_sma + comp_sma
+                                                    )
+                                                    # Convert to solar radii (1 LS ≈ 215.03 solar radii)
+                                                    separation_sr = (
+                                                        separation_ls * 215.03
+                                                    )
+
+                                                    # For accretion to occur, need close binary (< 500 SR)
+                                                    if separation_sr < 500:
+                                                        # Determine spin based on mass ratio
+                                                        if (
+                                                            mass is not None
+                                                            and comp_mass is not None
+                                                        ):
+                                                            # More massive companion → spin down
+                                                            # (magnetic braking, complex torques)
+                                                            # Less massive companion → spin up
+                                                            # (standard recycling scenario)
+                                                            if comp_mass > mass:
+                                                                spin = "down"
+                                                            else:
+                                                                spin = "up"
+                                                            break
+                                                        elif (
+                                                            comp_mass is not None
+                                                            and comp_mass > 0.5
+                                                        ):
+                                                            # If we don't know neutron star mass,
+                                                            # assume typical NS mass ~1.4 M☉
+                                                            if comp_mass > 1.4:
+                                                                spin = "down"
+                                                            else:
+                                                                spin = "up"
+                                                            break
 
                     points.append(
                         {
@@ -204,7 +246,7 @@ def extract_neutron_stars(gz_path, max_points=None, progress_interval=200000):
                             "age": age,
                             "mass": mass,
                             "temperature": temperature,
-                            "hasCloseCompanion": has_close_companion,
+                            "spin": spin,
                         }
                     )
                     stars_found += 1
@@ -271,7 +313,7 @@ def write_csv_cache(points, csv_path):
             "age",
             "mass",
             "temperature",
-            "hasCloseCompanion",
+            "spin",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -285,7 +327,7 @@ def write_csv_cache(points, csv_path):
                     "age": point["age"],
                     "mass": point["mass"],
                     "temperature": point["temperature"],
-                    "hasCloseCompanion": point["hasCloseCompanion"],
+                    "spin": point["spin"],
                 }
             )
 
@@ -321,7 +363,7 @@ def read_csv_cache(csv_path):
                         if row["temperature"] and row["temperature"] != "None"
                         else None
                     ),
-                    "hasCloseCompanion": int(row["hasCloseCompanion"]),
+                    "spin": row["spin"],
                 }
             )
 
