@@ -94,6 +94,7 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
             overflow-x: auto;
+            position: relative;
         }
 
         .loading {
@@ -101,6 +102,28 @@
             padding: 40px 20px;
             color: #888;
             font-size: 13px;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 26, 26, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .loading-overlay .message {
+            color: #4a9eff;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 20px;
         }
 
         .spinner {
@@ -158,7 +181,8 @@
         <button class="tab" onclick="showTab(9)">Tangential Velocity vs Mass</button>
         <button class="tab" onclick="showTab(10)">Temperature vs Compactness</button>
         <button class="tab" onclick="showTab(11)">Rotational Period vs Compactness</button>
-        <button class="tab" onclick="showTab(12)">Histograms</button>
+        <button class="tab" onclick="showTab(12)">Mass-Radius by Age Groups</button>
+        <button class="tab" onclick="showTab(13)">Histograms</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -273,6 +297,15 @@
     </div>
 
     <div id="tab12" class="tab-content">
+        <div class="help"><strong>Age Groups:</strong> Mass vs Radius with different age groups shown as separate traces. This clearly reveals how younger neutron stars follow a different mass-radius relationship than older ones.
+        </div>
+        <div class="plot-container">
+            <div id="plot-12" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-12b"></div>
+        </div>
+    </div>
+
+    <div id="tab13" class="tab-content">
         <div class="help"><strong>Distributions:</strong> Histograms showing the distribution of various neutron star
             parameters.
         </div>
@@ -299,7 +332,7 @@
                 <div id="hist-spin" style="width:100%;height:400px;"></div>
             </div>
         </div>
-        <div class="loading" id="loading-12"></div>
+        <div class="loading" id="loading-13"></div>
     </div>
 
     <script>
@@ -318,7 +351,7 @@
             { x: 'age', y: 'tangentialVelocity', color: 'mass', title: 'Tangential Velocity vs Age (color=mass)', xlabel: 'Age', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Mass (M☉)', colorscale: 'plasma', reference_line: 299792 },
             { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (km)', colorscale: 'plasma' },
             { x: 'mass', y: 'solarRadius', color: 'age', title: 'Radius vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Radius (km)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
-            { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true },
+            { x: 'rotationalPeriod', y: 'periodDerivative', color: 'spin', title: 'P-Ṗ Diagram (color=spin)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Spin State', colorscale: 'viridis', ppdot: true, spinTraces: true },
             { x: 'mass', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
             { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' },
             { x: 'mass', y: 'tangentialVelocity', color: 'age', title: 'Tangential Velocity vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', reference_line: 299792 },
@@ -941,6 +974,8 @@
             if (!loadedTabs.has(index)) {
                 console.log('[Tab ' + index + '] Loading plot...');
                 if (index === 12) {
+                    loadMassRadiusByAgeGroups(index);
+                } else if (index === 13) {
                     loadHistograms(index);
                 } else {
                     loadAndStreamData(index);
@@ -953,6 +988,283 @@
                     const totalPoints = csvData.length;
                     loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + totalPoints.toLocaleString() + ' data points</div>';
                 }
+            }
+        }
+
+        async function loadMassRadiusByAgeGroups(tabIndex) {
+            const loadingDiv = document.getElementById('loading-12b');
+            const plotDiv = document.getElementById('plot-12');
+            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
+
+            // Wait a moment for tab to fully render
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                // Get initial data
+                const data = await loadCSVStreaming();
+                if (!data) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
+                    return;
+                }
+
+                // Wait for CSV to completely load
+                while (!csvComplete) {
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+
+                loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + csvData.length.toLocaleString() + ' data points...';
+
+                // Process ALL data at once
+                const processedData = await processWithWorker(csvData, null);
+
+                console.log('[Mass-Radius Age Groups] Creating plot with ' + processedData.length + ' total points');
+
+                // Filter to valid mass and radius data
+                const validData = processedData.filter(r => 
+                    r.mass !== null && r.mass !== undefined && !isNaN(r.mass) &&
+                    r.solarRadius !== null && r.solarRadius !== undefined && !isNaN(r.solarRadius) &&
+                    r.age !== null && r.age !== undefined && !isNaN(r.age)
+                );
+
+                console.log('[Mass-Radius Age Groups] Filtered to ' + validData.length.toLocaleString() + ' valid points');
+
+                // Define age groups (in Myr)
+                const ageGroups = [
+                    { name: '< 1 Myr (Very Young)', min: 0, max: 1, color: '#ff0000' },
+                    { name: '1-10 Myr (Young)', min: 1, max: 10, color: '#ff6b00' },
+                    { name: '10-100 Myr', min: 10, max: 100, color: '#ffa500' },
+                    { name: '100-1000 Myr', min: 100, max: 1000, color: '#ffff00' },
+                    { name: '1-10 Gyr', min: 1000, max: 10000, color: '#00ff00' },
+                    { name: '> 10 Gyr (Very Old)', min: 10000, max: Infinity, color: '#0000ff' }
+                ];
+
+                // Group data by age
+                const traces = [];
+                for (const group of ageGroups) {
+                    const groupData = validData.filter(r => r.age >= group.min && r.age < group.max);
+                    
+                    if (groupData.length === 0) {
+                        console.log('[Mass-Radius Age Groups] No data for group: ' + group.name);
+                        continue;
+                    }
+
+                    // Downsample large groups for performance
+                    const sampledData = groupData.length > 50000 
+                        ? downsampleForDisplay(groupData, 'mass', 'solarRadius', 'age', 400)
+                        : groupData;
+
+                    console.log('[Mass-Radius Age Groups] Group "' + group.name + '": ' + groupData.length.toLocaleString() + ' points → ' + sampledData.length.toLocaleString() + ' displayed');
+
+                    const massData = [];
+                    const radiusData = [];
+                    const textData = [];
+
+                    // Build hover text inline like other charts
+                    const SPEED_OF_LIGHT = 299792;
+                    for (const r of sampledData) {
+                        massData.push(r.mass);
+                        radiusData.push(r.solarRadius);
+                        
+                        // Create hover text
+                        const radiusKm = r.solarRadius;
+                        let hoverParts = [`<b>${r.system}</b>`];
+
+                        if (r.solarRadius !== undefined && r.solarRadius !== null) {
+                            hoverParts.push(`Radius: ${radiusKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`);
+                        }
+
+                        if (r.mass !== undefined && r.mass !== null) {
+                            hoverParts.push(`Mass: ${r.mass.toFixed(2)} M☉`);
+                        }
+
+                        if (r.age !== undefined && r.age !== null) {
+                            const ageMyr = r.age;
+                            const ageGyr = ageMyr / 1000;
+                            if (ageGyr >= 1) {
+                                hoverParts.push(`Age: ${ageGyr.toLocaleString(undefined, { maximumFractionDigits: 2 })} Gyr`);
+                            } else {
+                                hoverParts.push(`Age: ${ageMyr.toLocaleString(undefined, { maximumFractionDigits: 1 })} Myr`);
+                            }
+                        }
+
+                        if (r.temperature !== undefined && r.temperature !== null) {
+                            hoverParts.push(`Temperature: ${r.temperature.toLocaleString(undefined, { maximumFractionDigits: 0 })} K`);
+                        }
+
+                        if (r.compactness !== undefined && r.compactness !== null) {
+                            hoverParts.push(`Compactness: ${r.compactness.toExponential(3)}`);
+                        }
+
+                        textData.push(hoverParts.join('<br>'));
+                    }
+
+                    traces.push({
+                        x: massData,
+                        y: radiusData,
+                        mode: 'markers',
+                        type: 'scattergl',
+                        name: group.name + ' (' + groupData.length.toLocaleString() + ' stars)',
+                        marker: {
+                            size: 3,
+                            color: group.color,
+                            opacity: 0.6
+                        },
+                        text: textData,
+                        hoverinfo: 'text'
+                    });
+                }
+
+                // Calculate data ranges for physics lines
+                let dataXMin = Infinity;
+                let dataXMax = -Infinity;
+                let dataYMin = Infinity;
+                let dataYMax = -Infinity;
+
+                for (const r of validData) {
+                    if (r.mass < dataXMin) dataXMin = r.mass;
+                    if (r.mass > dataXMax) dataXMax = r.mass;
+                    if (r.solarRadius < dataYMin) dataYMin = r.solarRadius;
+                    if (r.solarRadius > dataYMax) dataYMax = r.solarRadius;
+                }
+
+                const layout = {
+                    title: 'Mass vs Radius by Age Groups - Reveals Evolution Curves',
+                    xaxis: { 
+                        title: 'Mass (M☉)', 
+                        type: 'linear',
+                        gridcolor: '#333'
+                    },
+                    yaxis: { 
+                        title: 'Radius (km)', 
+                        type: 'linear',
+                        gridcolor: '#333'
+                    },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    hovermode: 'closest',
+                    autosize: true,
+                    height: 700,
+                    margin: { l: 80, r: 80, t: 80, b: 80 },
+                    showlegend: true,
+                    legend: {
+                        x: 1.02,
+                        y: 1,
+                        xanchor: 'left',
+                        bgcolor: 'rgba(45, 45, 45, 0.8)',
+                        bordercolor: '#555',
+                        borderwidth: 1
+                    }
+                };
+
+                // Add Schwarzschild radius line
+                const schwarzschildSlope = 2.95;
+                let schwY0 = dataXMin * schwarzschildSlope;
+                let schwY1 = dataXMax * schwarzschildSlope;
+                let schwX0 = dataXMin;
+                let schwX1 = dataXMax;
+
+                if (schwY0 < dataYMin) {
+                    schwX0 = dataYMin / schwarzschildSlope;
+                    schwY0 = dataYMin;
+                }
+                if (schwY1 > dataYMax) {
+                    schwX1 = dataYMax / schwarzschildSlope;
+                    schwY1 = dataYMax;
+                }
+
+                layout.shapes = [
+                    {
+                        type: 'line',
+                        x0: schwX0,
+                        x1: schwX1,
+                        y0: schwY0,
+                        y1: schwY1,
+                        line: { color: '#ff0000', width: 2.5, dash: 'dot' },
+                        layer: 'below'
+                    }
+                ];
+
+                // Add TOV limit if in range
+                if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                    layout.shapes.push({
+                        type: 'line',
+                        x0: 2.5,
+                        x1: 2.5,
+                        y0: dataYMin,
+                        y1: dataYMax,
+                        line: { color: '#9933ff', width: 2.5, dash: 'dot' },
+                        layer: 'below'
+                    });
+                }
+
+                // Add annotations
+                layout.annotations = [
+                    {
+                        x: 0.98,
+                        y: 0.98,
+                        xref: 'paper',
+                        yref: 'paper',
+                        text: '⋯⋯⋯ Schwarzschild Radius',
+                        showarrow: false,
+                        font: { color: '#ff0000', size: 12 },
+                        xanchor: 'right',
+                        yanchor: 'top',
+                        bgcolor: 'rgba(0,0,0,0.7)',
+                        borderpad: 4
+                    }
+                ];
+
+                if (2.5 >= dataXMin && 2.5 <= dataXMax) {
+                    layout.annotations.push({
+                        x: 0.98,
+                        y: 0.92,
+                        xref: 'paper',
+                        yref: 'paper',
+                        text: '⋯⋯⋯ TOV Limit (2.5 M☉)',
+                        showarrow: false,
+                        font: { color: '#9933ff', size: 12 },
+                        xanchor: 'right',
+                        yanchor: 'top',
+                        bgcolor: 'rgba(0,0,0,0.7)',
+                        borderpad: 4
+                    });
+                }
+
+                // Render the plot
+                plotDiv.style.display = 'none';
+                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
+                await new Promise(resolve => requestAnimationFrame(resolve));
+
+                await Plotly.newPlot(plotDiv, traces, layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+
+                plotDiv.style.display = 'block';
+                Plotly.Plots.resize(plotDiv);
+
+                // Add click handler
+                plotDiv.on('plotly_click', function (data) {
+                    const point = data.points[0];
+                    if (point && point.text) {
+                        const systemMatch = point.text.match(/<b>(.*?)<\/b>/);
+                        if (systemMatch) {
+                            const systemName = systemMatch[1];
+                            const url = 'https://signals.canonn.tech/?system=' + encodeURIComponent(systemName);
+                            console.log('[Plot] Opening system:', systemName, 'at', url);
+                            window.open(url, '_blank');
+                        }
+                    }
+                });
+
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + validData.length.toLocaleString() + ' data points in ' + traces.length + ' age groups | Click any point to view in Canonn Signals</div>';
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Mass-Radius Age Groups] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
             }
         }
 
@@ -1007,13 +1319,13 @@
                     await Plotly.newPlot('hist-radius', [{
                         x: radiusValues,
                         type: 'histogram',
-                        nbinsx: 50,
+                        nbinsx: 100,
                         marker: { color: '#4a9eff' },
                         name: 'Radius'
                     }], {
                         title: 'Radius Distribution',
                         xaxis: { title: 'Radius (km)', gridcolor: '#333' },
-                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
                         paper_bgcolor: '#1a1a1a',
                         plot_bgcolor: '#1a1a1a',
                         font: { color: '#fff' },
@@ -1028,13 +1340,13 @@
                     await Plotly.newPlot('hist-period', [{
                         x: periodValues,
                         type: 'histogram',
-                        nbinsx: 50,
+                        nbinsx: 100,
                         marker: { color: '#ff6b6b' },
                         name: 'Period'
                     }], {
                         title: 'Rotational Period Distribution',
                         xaxis: { title: 'Rotational Period (days)', gridcolor: '#333' },
-                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
                         paper_bgcolor: '#1a1a1a',
                         plot_bgcolor: '#1a1a1a',
                         font: { color: '#fff' },
@@ -1049,13 +1361,13 @@
                     await Plotly.newPlot('hist-age', [{
                         x: ageValues,
                         type: 'histogram',
-                        nbinsx: 50,
+                        nbinsx: 100,
                         marker: { color: '#51cf66' },
                         name: 'Age'
                     }], {
                         title: 'Age Distribution',
                         xaxis: { title: 'Age (Myr)', gridcolor: '#333' },
-                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
                         paper_bgcolor: '#1a1a1a',
                         plot_bgcolor: '#1a1a1a',
                         font: { color: '#fff' },
@@ -1070,13 +1382,13 @@
                     await Plotly.newPlot('hist-mass', [{
                         x: massValues,
                         type: 'histogram',
-                        nbinsx: 50,
+                        nbinsx: 100,
                         marker: { color: '#ffd43b' },
                         name: 'Mass'
                     }], {
                         title: 'Mass Distribution',
                         xaxis: { title: 'Mass (M☉)', gridcolor: '#333' },
-                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
                         shapes: [
                             {
                                 type: 'line',
@@ -1111,13 +1423,13 @@
                     await Plotly.newPlot('hist-temperature', [{
                         x: tempValues,
                         type: 'histogram',
-                        nbinsx: 50,
+                        nbinsx: 100,
                         marker: { color: '#ff8787' },
                         name: 'Temperature'
                     }], {
                         title: 'Temperature Distribution',
                         xaxis: { title: 'Temperature (K)', gridcolor: '#333' },
-                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
                         paper_bgcolor: '#1a1a1a',
                         plot_bgcolor: '#1a1a1a',
                         font: { color: '#fff' },
@@ -1132,13 +1444,13 @@
                     await Plotly.newPlot('hist-velocity', [{
                         x: velocityValues,
                         type: 'histogram',
-                        nbinsx: 50,
+                        nbinsx: 100,
                         marker: { color: '#b197fc' },
                         name: 'Velocity'
                     }], {
                         title: 'Tangential Velocity Distribution',
                         xaxis: { title: 'Velocity (km/s)', gridcolor: '#333' },
-                        yaxis: { title: 'Count', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
                         shapes: [
                             {
                                 type: 'line',
@@ -1252,9 +1564,10 @@
 
                 console.log('[Plot ' + tabIndex + '] Filtered to ' + validData.length.toLocaleString() + ' valid points for ' + xField + ' vs ' + yField);
                 
-                // If this is a large dataset, warn about performance
+                // If this is a large dataset, warn about performance and consider downsampling
                 if (validData.length > 1000000) {
-                    console.warn('[Plot ' + tabIndex + '] Large dataset: ' + validData.length.toLocaleString() + ' points may cause performance issues');
+                    console.warn('[Plot ' + tabIndex + '] Large dataset: ' + validData.length.toLocaleString() + ' points - performance optimization active');
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + validData.length.toLocaleString() + ' points (this may take a moment)...';
                 }
 
                 // Update min/max from valid data
@@ -1271,17 +1584,20 @@
                     }
                 });
 
-                // For Temperature vs Compactness, apply downsampling to improve performance
-                // Compactness values are tightly clustered causing extreme overdraw with 3.8M points
+                // Apply smart downsampling for better performance
                 let plotData;
                 let allDataForZoom = null; // Store full dataset for dynamic zoom resampling
-                if (xField === 'compactness' || yField === 'compactness') {
-                    console.log('[Plot ' + tabIndex + '] Applying smart downsampling for compactness plot (extreme clustering)');
-                    plotData = downsampleForDisplay(validData, xField, yField, colorField, 1200);
+                
+                // Downsample if dataset is very large (>2M points) or has compactness field
+                if (validData.length > 2000000 || xField === 'compactness' || yField === 'compactness') {
+                    console.log('[Plot ' + tabIndex + '] Applying smart downsampling (' + (xField === 'compactness' || yField === 'compactness' ? 'compactness plot' : 'large dataset') + ')');
+                    // Use smaller grid for compactness (extreme clustering), larger for others
+                    const gridSize = (xField === 'compactness' || yField === 'compactness') ? 600 : 1000;
+                    plotData = downsampleForDisplay(validData, xField, yField, colorField, gridSize);
                     allDataForZoom = validData; // Keep full data for zoom interactions
                     console.log('[Plot ' + tabIndex + '] Downsampled from ' + validData.length.toLocaleString() + ' to ' + plotData.length.toLocaleString() + ' points');
                 } else {
-                    // Use all valid data without downsampling for other plots
+                    // Use all valid data without downsampling for smaller plots
                     plotData = validData;
                 }
 
@@ -1312,24 +1628,65 @@
                     textData[i] = plotData[i].hoverText;
                 }
 
-                const trace = {
-                    x: xData,
-                    y: yData,
-                    mode: 'markers',
-                    type: 'scattergl',
-                    marker: {
-                        size: 3,
-                        color: colorData,
-                        colorscale: plotConfig.colorscale === 'viridis' ? 'Viridis' : 'Plasma',
-                        showscale: true,
-                        colorbar: { title: plotConfig.colorbar },
-                        cmin: colorMin,
-                        cmax: colorMax
-                    },
-                    customdata: systemData,
-                    text: textData,
-                    hoverinfo: 'text'
-                };
+                // Check if this plot needs separate spin state traces
+                let traces = [];
+                if (plotConfig.spinTraces) {
+                    console.log('[Plot ' + tabIndex + '] Creating separate traces for spin states');
+                    
+                    const spinStates = [
+                        { name: 'Spin Up', value: 'up', color: '#00ff00' },
+                        { name: 'Spin Down', value: 'down', color: '#ff3333' },
+                        { name: 'No Spin', value: 'none', color: '#ffaa00' }
+                    ];
+                    
+                    for (const spinState of spinStates) {
+                        const spinData = plotData.filter(r => r.spin === spinState.value);
+                        if (spinData.length === 0) continue;
+                        
+                        const spinXData = spinData.map(r => r[xField]);
+                        const spinYData = spinData.map(r => r[yField]);
+                        const spinTextData = spinData.map(r => r.hoverText);
+                        const spinSystemData = spinData.map(r => r.system);
+                        
+                        traces.push({
+                            x: spinXData,
+                            y: spinYData,
+                            mode: 'markers',
+                            type: 'scattergl',
+                            name: spinState.name + ' (' + spinData.length.toLocaleString() + ')',
+                            marker: {
+                                size: 4,
+                                color: spinState.color,
+                                opacity: 1.0
+                            },
+                            customdata: spinSystemData,
+                            text: spinTextData,
+                            hoverinfo: 'text',
+                            legendgroup: spinState.value,
+                            showlegend: true
+                        });
+                    }
+                } else {
+                    const trace = {
+                        x: xData,
+                        y: yData,
+                        mode: 'markers',
+                        type: 'scattergl',
+                        marker: {
+                            size: 3,
+                            color: colorData,
+                            colorscale: plotConfig.colorscale === 'viridis' ? 'Viridis' : 'Plasma',
+                            showscale: true,
+                            colorbar: { title: plotConfig.colorbar },
+                            cmin: colorMin,
+                            cmax: colorMax
+                        },
+                        customdata: systemData,
+                        text: textData,
+                        hoverinfo: 'text'
+                    };
+                    traces.push(trace);
+                }
 
                 // Determine axis types based on field names
                 // Log scale for everything EXCEPT age, mass, radius (solarRadius), temperature, and compactness
@@ -1347,8 +1704,20 @@
                     autosize: true,
                     height: 700,
                     margin: { l: 80, r: 80, t: 80, b: 80 },
-                    showlegend: false
+                    showlegend: plotConfig.spinTraces ? true : false
                 };
+
+                // Add legend configuration for spin traces
+                if (plotConfig.spinTraces) {
+                    layout.legend = {
+                        x: 1.02,
+                        y: 1,
+                        xanchor: 'left',
+                        bgcolor: 'rgba(45, 45, 45, 0.9)',
+                        bordercolor: '#555',
+                        borderwidth: 1
+                    };
+                }
 
                 // Add rotational period unit boundaries
                 const periodBoundaries = [
@@ -1745,7 +2114,7 @@
                 await new Promise(resolve => requestAnimationFrame(resolve));
 
                 const renderStart = performance.now();
-                Plotly.newPlot(plotDiv, [trace, ...boundaryTraces], layout, {
+                Plotly.newPlot(plotDiv, [...traces, ...boundaryTraces], layout, {
                     responsive: true,
                     displayModeBar: true
                 });
@@ -1757,46 +2126,134 @@
                 Plotly.Plots.resize(plotDiv);
 
                 // Add zoom handler for dynamic resampling on compactness plot
-                if (allDataForZoom) {
+                // Skip zoom handler for spin traces plots as they already have all data loaded
+                if (allDataForZoom && !plotConfig.spinTraces) {
+                    let zoomTimeout = null;
+                    let loadingOverlay = null;
+                    
+                    // Store original data for reset functionality
+                    const originalData = {
+                        x: [...xData],
+                        y: [...yData],
+                        color: [...colorData],
+                        text: [...textData],
+                        customdata: [...systemData]
+                    };
+                    
                     plotDiv.on('plotly_relayout', function(eventData) {
+                        console.log('[Plot ' + tabIndex + '] Relayout event:', eventData);
+                        
+                        // Check if this is a reset/autoscale event
+                        if (eventData['xaxis.autorange'] || eventData['yaxis.autorange']) {
+                            console.log('[Plot ' + tabIndex + '] Reset axes detected, restoring original data...');
+                            
+                            // Clear any pending zoom operation
+                            if (zoomTimeout) {
+                                clearTimeout(zoomTimeout);
+                            }
+                            
+                            // Restore original downsampled data
+                            Plotly.restyle(plotDiv, {
+                                x: [originalData.x],
+                                y: [originalData.y],
+                                'marker.color': [originalData.color],
+                                text: [originalData.text],
+                                customdata: [originalData.customdata]
+                            }, 0);
+                            
+                            console.log('[Plot ' + tabIndex + '] Original data restored (' + originalData.x.length.toLocaleString() + ' points)');
+                            return;
+                        }
+                        
                         // Check if this is a zoom event (has xaxis.range or yaxis.range)
                         if (!eventData['xaxis.range[0]'] && !eventData['xaxis.range']) return;
                         
-                        console.log('[Plot ' + tabIndex + '] Zoom detected, resampling data for current view...');
+                        // Clear any pending zoom operation
+                        if (zoomTimeout) {
+                            clearTimeout(zoomTimeout);
+                        }
                         
-                        // Get current axis ranges
-                        const xRange = eventData['xaxis.range'] || [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']];
-                        const yRange = eventData['yaxis.range'] || [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
+                        // Show loading overlay
+                        if (!loadingOverlay) {
+                            loadingOverlay = document.createElement('div');
+                            loadingOverlay.className = 'loading-overlay';
+                            loadingOverlay.innerHTML = '<div class="spinner"></div><div class="message">Please wait, loading more data...</div>';
+                            plotDiv.parentElement.style.position = 'relative';
+                            plotDiv.parentElement.appendChild(loadingOverlay);
+                        }
+                        loadingOverlay.style.display = 'flex';
                         
-                        if (!xRange || !yRange) return;
-                        
-                        // Filter data to visible range
-                        const visibleData = allDataForZoom.filter(r => {
-                            const xVal = r[xField];
-                            const yVal = r[yField];
-                            return xVal >= xRange[0] && xVal <= xRange[1] &&
-                                   yVal >= yRange[0] && yVal <= yRange[1];
-                        });
-                        
-                        console.log('[Plot ' + tabIndex + '] Visible data: ' + visibleData.length.toLocaleString() + ' points in view');
-                        
-                        // Resample visible data with finer grid when zoomed in
-                        const resampledData = downsampleForDisplay(visibleData, xField, yField, colorField, 1500);
-                        console.log('[Plot ' + tabIndex + '] Resampled to ' + resampledData.length.toLocaleString() + ' points for zoomed view');
-                        
-                        // Build new data arrays
-                        const newXData = resampledData.map(r => r[xField]);
-                        const newYData = resampledData.map(r => r[yField]);
-                        const newColorData = resampledData.map(r => r[colorField]);
-                        const newTextData = resampledData.map(r => r.hoverText);
-                        
-                        // Update the plot with new data
-                        Plotly.restyle(plotDiv, {
-                            x: [newXData],
-                            y: [newYData],
-                            'marker.color': [newColorData],
-                            text: [newTextData]
-                        }, 0);
+                        // Debounce zoom handling to avoid excessive computation
+                        zoomTimeout = setTimeout(async function() {
+                            console.log('[Plot ' + tabIndex + '] Zoom detected, resampling data for current view...');
+                            
+                            // Get current axis ranges - handle both possible formats
+                            let xRange, yRange;
+                            if (eventData['xaxis.range[0]'] !== undefined) {
+                                xRange = [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']];
+                            } else if (eventData['xaxis.range']) {
+                                xRange = eventData['xaxis.range'];
+                            }
+                            
+                            if (eventData['yaxis.range[0]'] !== undefined) {
+                                yRange = [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
+                            } else if (eventData['yaxis.range']) {
+                                yRange = eventData['yaxis.range'];
+                            }
+                            
+                            if (!xRange || !yRange) {
+                                console.log('[Plot ' + tabIndex + '] Missing axis ranges, skipping resample');
+                                loadingOverlay.style.display = 'none';
+                                return;
+                            }
+                            
+                            console.log('[Plot ' + tabIndex + '] X range:', xRange, 'Y range:', yRange);
+                            
+                            // Handle log scale axes - Plotly returns ranges in log space for log axes
+                            // Need to convert back to linear space for data filtering
+                            const useLogX = xType === 'log';
+                            const useLogY = yType === 'log';
+                            
+                            const xMin = useLogX ? Math.pow(10, xRange[0]) : xRange[0];
+                            const xMax = useLogX ? Math.pow(10, xRange[1]) : xRange[1];
+                            const yMin = useLogY ? Math.pow(10, yRange[0]) : yRange[0];
+                            const yMax = useLogY ? Math.pow(10, yRange[1]) : yRange[1];
+                            
+                            console.log('[Plot ' + tabIndex + '] Linear ranges - X:', xMin, 'to', xMax, ', Y:', yMin, 'to', yMax);
+                            
+                            // Filter data to visible range
+                            const visibleData = allDataForZoom.filter(r => {
+                                const xVal = r[xField];
+                                const yVal = r[yField];
+                                return xVal >= xMin && xVal <= xMax &&
+                                       yVal >= yMin && yVal <= yMax;
+                            });
+                            
+                            console.log('[Plot ' + tabIndex + '] Visible data: ' + visibleData.length.toLocaleString() + ' points in view');
+                            
+                            // Resample visible data with finer grid when zoomed in
+                            const resampledData = downsampleForDisplay(visibleData, xField, yField, colorField, 1000);
+                            console.log('[Plot ' + tabIndex + '] Resampled to ' + resampledData.length.toLocaleString() + ' points for zoomed view');
+                            
+                            // Build new data arrays
+                            const newXData = resampledData.map(r => r[xField]);
+                            const newYData = resampledData.map(r => r[yField]);
+                            const newColorData = resampledData.map(r => r[colorField]);
+                            const newTextData = resampledData.map(r => r.hoverText);
+                            const newSystemData = resampledData.map(r => r.system);
+                            
+                            // Update the plot with new data - include customdata for click handler
+                            await Plotly.restyle(plotDiv, {
+                                x: [newXData],
+                                y: [newYData],
+                                'marker.color': [newColorData],
+                                text: [newTextData],
+                                customdata: [newSystemData]
+                            }, 0);
+                            
+                            // Hide loading overlay
+                            loadingOverlay.style.display = 'none';
+                        }, 500); // Wait 500ms after last zoom event before processing
                     });
                 }
 
