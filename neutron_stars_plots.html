@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neutron Stars Analysis</title>
+    <title>Neutron Star Analysis</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
         * {
@@ -141,7 +141,7 @@
 
 <body>
     <div class="header">
-        <h1>Neutron Stars Analysis</h1>
+        <h1>Neutron Star Analysis</h1>
         <div class="subtitle">Interactive controls: zoom, pan, box select | Data loads on-demand with streaming</div>
     </div>
 
@@ -156,7 +156,9 @@
         <button class="tab" onclick="showTab(7)">Rotational Period vs Mass</button>
         <button class="tab" onclick="showTab(8)">Mass vs Age</button>
         <button class="tab" onclick="showTab(9)">Tangential Velocity vs Mass</button>
-        <button class="tab" onclick="showTab(10)">Histograms</button>
+        <button class="tab" onclick="showTab(10)">Temperature vs Compactness</button>
+        <button class="tab" onclick="showTab(11)">Rotational Period vs Compactness</button>
+        <button class="tab" onclick="showTab(12)">Histograms</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -251,6 +253,26 @@
     </div>
 
     <div id="tab10" class="tab-content">
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. Compactness is GM/(Rc²), a
+            dimensionless measure of gravitational strength.
+        </div>
+        <div class="plot-container">
+            <div id="plot-10" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-10"></div>
+        </div>
+    </div>
+
+    <div id="tab11" class="tab-content">
+        <div class="help"><strong>Controls:</strong> Zoom, pan, hover for details. This plot shows how compactness
+            relates to rotation.
+        </div>
+        <div class="plot-container">
+            <div id="plot-11" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-11"></div>
+        </div>
+    </div>
+
+    <div id="tab12" class="tab-content">
         <div class="help"><strong>Distributions:</strong> Histograms showing the distribution of various neutron star
             parameters.
         </div>
@@ -277,7 +299,7 @@
                 <div id="hist-spin" style="width:100%;height:400px;"></div>
             </div>
         </div>
-        <div class="loading" id="loading-10"></div>
+        <div class="loading" id="loading-12"></div>
     </div>
 
     <script>
@@ -295,11 +317,13 @@
             { x: 'age', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Age (color=rotational period)', xlabel: 'Age', ylabel: 'Radius (km)', colorbar: 'Rotational Period', colorscale: 'viridis' },
             { x: 'age', y: 'tangentialVelocity', color: 'mass', title: 'Tangential Velocity vs Age (color=mass)', xlabel: 'Age', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Mass (M☉)', colorscale: 'plasma', reference_line: 299792 },
             { x: 'age', y: 'temperature', color: 'solarRadius', title: 'Temperature vs Age (color=radius)', xlabel: 'Age', ylabel: 'Temperature (K)', colorbar: 'Radius (km)', colorscale: 'plasma' },
-            { x: 'mass', y: 'solarRadius', color: 'rotationalPeriod', title: 'Radius vs Mass (color=rotational period)', xlabel: 'Mass (M☉)', ylabel: 'Radius (km)', colorbar: 'Rotational Period', colorscale: 'viridis' },
+            { x: 'mass', y: 'solarRadius', color: 'age', title: 'Radius vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Radius (km)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
             { x: 'rotationalPeriod', y: 'periodDerivative', color: 'age', title: 'P-Ṗ Diagram (color=age)', xlabel: 'Period P (days)', ylabel: 'Period Derivative Ṗ (s/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', ppdot: true },
             { x: 'mass', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
             { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' },
-            { x: 'mass', y: 'tangentialVelocity', color: 'age', title: 'Tangential Velocity vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', reference_line: 299792 }
+            { x: 'mass', y: 'tangentialVelocity', color: 'age', title: 'Tangential Velocity vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', reference_line: 299792 },
+            { x: 'compactness', y: 'temperature', color: 'age', title: 'Temperature vs Compactness (color=age)', xlabel: 'Compactness (GM/Rc²)', ylabel: 'Surface Temperature (K)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
+            { x: 'compactness', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Compactness (color=age)', xlabel: 'Compactness (GM/Rc²)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' }
         ];
 
         let csvData = [];
@@ -479,15 +503,29 @@
                             const ageSeconds = row.age * 1e6 * 365.25 * 86400;
                             const periodDerivative = periodSeconds / (2 * ageSeconds);
                             
-                            const processedRow = {
+                            // Calculate compactness: GM/(Rc²)
+                            // G = 6.67430e-11 m³ kg⁻¹ s⁻²
+                            // M_sun = 1.98847e30 kg
+                            // R_sun = 6.957e8 m
+                            // c = 2.99792458e8 m/s
+                            let compactness = null;
+                            if (row.mass !== null && row.mass !== undefined) {
+                                const G = 6.67430e-11;
+                                const M_sun = 1.98847e30;
+                                const R_sun = 6.957e8;
+                                const c = 2.99792458e8;
+                                const M_kg = row.mass * M_sun;
+                                const R_m = row.solarRadius * R_sun;
+                                compactness = (G * M_kg) / (R_m * c * c);
+                            }
+                            
+                            return {
                                 ...row,
                                 solarRadius: radiusKm,  // Convert to km
                                 tangentialVelocity: tangVel,
-                                periodDerivative: periodDerivative
+                                periodDerivative: periodDerivative,
+                                compactness: compactness
                             };
-                            // Pre-compute hover text in worker (after conversion)
-                            processedRow.hoverText = formatHoverText(processedRow);
-                            return processedRow;
                         });
                         
                         // Return full processed rows with pre-computed hover text
@@ -525,35 +563,105 @@
             });
         }
 
+        // Format hover text for a single row
+        function formatHoverTextForRow(row) {
+            const SPEED_OF_LIGHT = 299792;
+            const radiusKm = row.solarRadius;
+            let hoverParts = [`<b>${row.system}</b>`];
+            if (row.solarRadius !== undefined) {
+                hoverParts.push(`Radius: ${radiusKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`);
+            }
+            if (row.rotationalPeriod !== undefined && row.tangentialVelocity !== undefined) {
+                if (row.tangentialVelocity >= 0.1 * SPEED_OF_LIGHT) {
+                    const speedInC = row.tangentialVelocity / SPEED_OF_LIGHT;
+                    hoverParts.push(`Rotational Velocity: ${speedInC.toFixed(3)}c`);
+                } else {
+                    hoverParts.push(`Rotational Velocity: ${row.tangentialVelocity.toLocaleString(undefined, { maximumFractionDigits: 1 })} km/s`);
+                }
+                const periodDays = row.rotationalPeriod;
+                const periodSeconds = periodDays * 86400;
+                if (periodSeconds < 1) {
+                    hoverParts.push(`Rotational Period: ${(periodSeconds * 1000).toFixed(2)} ms`);
+                } else if (periodSeconds < 60) {
+                    hoverParts.push(`Rotational Period: ${periodSeconds.toFixed(3)} s`);
+                } else if (periodSeconds < 3600) {
+                    hoverParts.push(`Rotational Period: ${(periodSeconds / 60).toFixed(2)} min`);
+                } else if (periodDays < 1) {
+                    hoverParts.push(`Rotational Period: ${(periodSeconds / 3600).toFixed(2)} hr`);
+                } else if (periodDays < 365.25) {
+                    hoverParts.push(`Rotational Period: ${periodDays.toFixed(2)} days`);
+                } else {
+                    hoverParts.push(`Rotational Period: ${(periodDays / 365.25).toFixed(2)} yr`);
+                }
+            }
+            if (row.age !== undefined) {
+                const ageMyr = row.age;
+                const ageGyr = ageMyr / 1000;
+                if (ageGyr >= 1) {
+                    hoverParts.push(`Age: ${ageGyr.toLocaleString(undefined, { maximumFractionDigits: 2 })} Gyr`);
+                } else {
+                    hoverParts.push(`Age: ${ageMyr.toLocaleString(undefined, { maximumFractionDigits: 1 })} Myr`);
+                }
+            }
+            if (row.temperature !== undefined) {
+                hoverParts.push(`Temperature: ${row.temperature.toLocaleString(undefined, { maximumFractionDigits: 0 })} K`);
+            }
+            if (row.mass !== undefined) {
+                hoverParts.push(`Mass: ${row.mass.toFixed(2)} M☉`);
+            }
+            if (row.compactness !== undefined && row.compactness !== null) {
+                hoverParts.push(`Compactness: ${row.compactness.toExponential(3)}`);
+            }
+            if (row.spin !== undefined) {
+                hoverParts.push(`Spin: ${row.spin}`);
+            }
+            return hoverParts.join('<br>');
+        }
+
         // Smart downsampling: reduce overlapping points at default zoom
         function downsampleForDisplay(rows, xField, yField, colorField, gridSize = 800) {
             if (rows.length === 0) return rows;
 
-            // Find data ranges (in log space since we use log axes)
-            let xMin = Infinity, xMax = -Infinity;
-            let yMin = Infinity, yMax = -Infinity;
-            let validCount = 0;
-
-            for (const row of rows) {
+            // Filter out rows with invalid x or y values first
+            const validRows = rows.filter(row => {
                 const x = row[xField];
                 const y = row[yField];
-                if (x > 0 && y > 0 && isFinite(x) && isFinite(y)) {
-                    const logX = Math.log10(x);
-                    const logY = Math.log10(y);
-                    if (isFinite(logX) && isFinite(logY)) {
-                        if (logX < xMin) xMin = logX;
-                        if (logX > xMax) xMax = logX;
-                        if (logY < yMin) yMin = logY;
-                        if (logY > yMax) yMax = logY;
-                        validCount++;
-                    }
+                return x !== null && x !== undefined && y !== null && y !== undefined &&
+                    isFinite(x) && isFinite(y);
+            });
+
+            if (validRows.length === 0) {
+                console.log('[Downsample] No valid points for downsampling');
+                return [];
+            }
+
+            // Find data ranges (handle both linear and log axes)
+            let xMin = Infinity, xMax = -Infinity;
+            let yMin = Infinity, yMax = -Infinity;
+
+            // Check if fields should use log scale
+            const useLogX = !(xField === 'age' || xField === 'mass' || xField === 'solarRadius' || xField === 'temperature' || xField === 'compactness');
+            const useLogY = !(yField === 'age' || yField === 'mass' || yField === 'solarRadius' || yField === 'temperature' || yField === 'compactness');
+
+            for (const row of validRows) {
+                const x = row[xField];
+                const y = row[yField];
+
+                const xVal = (useLogX && x > 0) ? Math.log10(x) : x;
+                const yVal = (useLogY && y > 0) ? Math.log10(y) : y;
+
+                if (isFinite(xVal) && isFinite(yVal)) {
+                    if (xVal < xMin) xMin = xVal;
+                    if (xVal > xMax) xMax = xVal;
+                    if (yVal < yMin) yMin = yVal;
+                    if (yVal > yMax) yMax = yVal;
                 }
             }
 
-            // If no valid points or ranges are invalid, return original
-            if (validCount === 0 || !isFinite(xMin) || !isFinite(xMax) || !isFinite(yMin) || !isFinite(yMax)) {
-                console.log('[Downsample] No valid points for downsampling, returning original');
-                return rows;
+            // If ranges are invalid, return valid rows
+            if (!isFinite(xMin) || !isFinite(xMax) || !isFinite(yMin) || !isFinite(yMax)) {
+                console.log('[Downsample] Invalid ranges, returning valid rows');
+                return validRows;
             }
 
             // Create spatial grid
@@ -563,30 +671,29 @@
 
             // Safety check for range
             if (xRange === 0 || yRange === 0) {
-                console.log('[Downsample] Zero range detected, returning original');
-                return rows;
+                console.log('[Downsample] Zero range detected, returning valid rows');
+                return validRows;
             }
 
             // Bin points into grid cells (store arrays of points per cell)
-            for (const row of rows) {
+            for (const row of validRows) {
                 const x = row[xField];
                 const y = row[yField];
-                if (x > 0 && y > 0 && isFinite(x) && isFinite(y)) {
-                    const logX = Math.log10(x);
-                    const logY = Math.log10(y);
 
-                    if (isFinite(logX) && isFinite(logY)) {
-                        // Calculate grid cell
-                        const cellX = Math.floor((logX - xMin) / xRange * gridSize);
-                        const cellY = Math.floor((logY - yMin) / yRange * gridSize);
-                        const cellKey = cellX + ',' + cellY;
+                const xVal = (useLogX && x > 0) ? Math.log10(x) : x;
+                const yVal = (useLogY && y > 0) ? Math.log10(y) : y;
 
-                        // Store all points in this cell
-                        if (!grid.has(cellKey)) {
-                            grid.set(cellKey, []);
-                        }
-                        grid.get(cellKey).push(row);
+                if (isFinite(xVal) && isFinite(yVal)) {
+                    // Calculate grid cell
+                    const cellX = Math.floor((xVal - xMin) / xRange * gridSize);
+                    const cellY = Math.floor((yVal - yMin) / yRange * gridSize);
+                    const cellKey = cellX + ',' + cellY;
+
+                    // Store all points in this cell
+                    if (!grid.has(cellKey)) {
+                        grid.set(cellKey, []);
                     }
+                    grid.get(cellKey).push(row);
                 }
             }
 
@@ -635,6 +742,70 @@
                 return rows;
             }
 
+            // Compute hoverText only for downsampled points
+            const SPEED_OF_LIGHT = 299792;
+            sampled.forEach(row => {
+                const radiusKm = row.solarRadius;
+                let hoverParts = [`<b>${row.system}</b>`];
+
+                if (row.solarRadius !== undefined && row.solarRadius !== null) {
+                    hoverParts.push(`Radius: ${radiusKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`);
+                }
+
+                if (row.rotationalPeriod !== undefined && row.rotationalPeriod !== null && row.tangentialVelocity !== undefined && row.tangentialVelocity !== null) {
+                    if (row.tangentialVelocity >= 0.1 * SPEED_OF_LIGHT) {
+                        const speedInC = row.tangentialVelocity / SPEED_OF_LIGHT;
+                        hoverParts.push(`Rotational Velocity: ${speedInC.toFixed(3)}c`);
+                    } else {
+                        hoverParts.push(`Rotational Velocity: ${row.tangentialVelocity.toLocaleString(undefined, { maximumFractionDigits: 1 })} km/s`);
+                    }
+
+                    const periodDays = row.rotationalPeriod;
+                    const periodSeconds = periodDays * 86400;
+                    if (periodSeconds < 1) {
+                        hoverParts.push(`Rotational Period: ${(periodSeconds * 1000).toFixed(2)} ms`);
+                    } else if (periodSeconds < 60) {
+                        hoverParts.push(`Rotational Period: ${periodSeconds.toFixed(3)} s`);
+                    } else if (periodSeconds < 3600) {
+                        hoverParts.push(`Rotational Period: ${(periodSeconds / 60).toFixed(2)} min`);
+                    } else if (periodDays < 1) {
+                        hoverParts.push(`Rotational Period: ${(periodSeconds / 3600).toFixed(2)} hr`);
+                    } else if (periodDays < 365.25) {
+                        hoverParts.push(`Rotational Period: ${periodDays.toFixed(2)} days`);
+                    } else {
+                        hoverParts.push(`Rotational Period: ${(periodDays / 365.25).toFixed(2)} yr`);
+                    }
+                }
+
+                if (row.age !== undefined && row.age !== null) {
+                    const ageMyr = row.age;
+                    const ageGyr = ageMyr / 1000;
+                    if (ageGyr >= 1) {
+                        hoverParts.push(`Age: ${ageGyr.toLocaleString(undefined, { maximumFractionDigits: 2 })} Gyr`);
+                    } else {
+                        hoverParts.push(`Age: ${ageMyr.toLocaleString(undefined, { maximumFractionDigits: 1 })} Myr`);
+                    }
+                }
+
+                if (row.temperature !== undefined && row.temperature !== null) {
+                    hoverParts.push(`Temperature: ${row.temperature.toLocaleString(undefined, { maximumFractionDigits: 0 })} K`);
+                }
+
+                if (row.mass !== undefined && row.mass !== null) {
+                    hoverParts.push(`Mass: ${row.mass.toFixed(2)} M☉`);
+                }
+
+                if (row.compactness !== undefined && row.compactness !== null) {
+                    hoverParts.push(`Compactness: ${row.compactness.toExponential(3)}`);
+                }
+
+                if (row.spin !== undefined && row.spin !== null) {
+                    hoverParts.push(`Spin: ${row.spin}`);
+                }
+
+                row.hoverText = hoverParts.join('<br>');
+            });
+
             console.log('[Downsample] Reduced ' + rows.length.toLocaleString() + ' → ' + sampled.length.toLocaleString() + ' points (' + (sampled.length / rows.length * 100).toFixed(1) + '%)');
             return sampled;
         }
@@ -668,28 +839,47 @@
             return row;
         }
 
-        async function loadCSVStreaming() {
-            if (csvData.length > 0) return csvData;
+        let progressCallbacks = [];
+        let csvLoading = false;
+        let csvLoadPromise = null;
 
+        async function loadCSVStreaming(onProgress) {
+            // If already complete, return immediately
+            if (csvComplete && csvData.length > 0) {
+                if (onProgress) onProgress(csvData.length, true);
+                return csvData;
+            }
+
+            // If currently loading, wait for existing load to complete
+            if (csvLoading && csvLoadPromise) {
+                console.log('[CSV] Already loading, waiting for completion...');
+                if (onProgress) {
+                    progressCallbacks.push(onProgress);
+                }
+                return csvLoadPromise;
+            }
+
+            // Start new load
+            csvLoading = true;
             console.log('[CSV] Loading from ' + CSV_PATH);
 
-            const response = await fetch(CSV_PATH);
-            const reader = response.body.pipeThrough(new DecompressionStream('gzip')).getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let headersParsed = false;
-            let initialChunkResolved = false;
-            let resolveInitial = null;
-            const initialPromise = new Promise(r => { resolveInitial = r; });
+            csvLoadPromise = (async () => {
+                const response = await fetch(CSV_PATH);
+                const reader = response.body.pipeThrough(new DecompressionStream('gzip')).getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let headersParsed = false;
 
-            // Start streaming in background
-            (async () => {
                 try {
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) {
                             console.log('[CSV] Stream complete');
                             csvComplete = true;
+                            csvLoading = false;
+                            if (onProgress) onProgress(csvData.length, true);
+                            progressCallbacks.forEach(cb => cb(csvData.length, true));
+                            progressCallbacks = [];
                             break;
                         }
 
@@ -710,14 +900,10 @@
                                 const row = parseCSVLine(line, csvHeaders);
                                 csvData.push(row);
 
-                                if (!initialChunkResolved && csvData.length >= INITIAL_CHUNK_SIZE) {
-                                    console.log('[CSV] Initial chunk ready with ' + csvData.length + ' rows');
-                                    resolveInitial(csvData);
-                                    initialChunkResolved = true;
-                                }
-
                                 if (csvData.length % 100000 === 0) {
                                     console.log('[CSV] Received ' + csvData.length.toLocaleString() + ' rows');
+                                    if (onProgress) onProgress(csvData.length, false);
+                                    progressCallbacks.forEach(cb => cb(csvData.length, false));
                                 }
                             }
                         }
@@ -729,19 +915,15 @@
                     }
 
                     console.log('[CSV] Complete! Total rows: ' + csvData.length.toLocaleString());
-
-                    if (!initialChunkResolved) {
-                        resolveInitial(csvData);
-                    }
                 } catch (error) {
                     console.error('[CSV] Streaming error:', error);
-                    if (!initialChunkResolved) {
-                        resolveInitial(null);
-                    }
+                    csvLoading = false;
                 }
+
+                return csvData;
             })();
 
-            return initialPromise;
+            return csvLoadPromise;
         }
 
         function showTab(index) {
@@ -758,7 +940,7 @@
 
             if (!loadedTabs.has(index)) {
                 console.log('[Tab ' + index + '] Loading plot...');
-                if (index === 10) {
+                if (index === 12) {
                     loadHistograms(index);
                 } else {
                     loadAndStreamData(index);
@@ -1013,13 +1195,26 @@
 
         async function loadAndStreamData(tabIndex) {
             const loadingDiv = document.getElementById('loading-' + tabIndex);
+            const plotDiv = document.getElementById('plot-' + tabIndex);
             const plotConfig = plots[tabIndex];
             const startTime = performance.now();
 
             console.log('[Plot ' + tabIndex + '] Starting load for: ' + plotConfig.title);
 
+            // Hide plot div and show loading in its place
+            plotDiv.style.display = 'none';
+            loadingDiv.innerHTML = '<div class="spinner"></div>Loading data: 0 rows...';
+
             try {
-                const data = await loadCSVStreaming();
+                const progressCallback = (count, complete) => {
+                    if (complete) {
+                        loadingDiv.innerHTML = '<div class="spinner"></div>Loaded ' + count.toLocaleString() + ' rows, rendering chart...';
+                    } else {
+                        loadingDiv.innerHTML = '<div class="spinner"></div>Loading data: ' + count.toLocaleString() + ' rows...';
+                    }
+                };
+
+                const data = await loadCSVStreaming(progressCallback);
                 if (!data) {
                     loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
                     return;
@@ -1042,12 +1237,28 @@
                 let dataYMin = Infinity;
                 let dataYMax = -Infinity;
 
-                // Process initial chunk with worker
-                const initialData = data.slice(0, INITIAL_CHUNK_SIZE);
-                const processedInitial = await processWithWorker(initialData, null);
+                // Process ALL data with worker
+                console.log('[Plot ' + tabIndex + '] Processing ' + data.length.toLocaleString() + ' total rows from CSV');
+                const processedData = await processWithWorker(data, null);
+                console.log('[Plot ' + tabIndex + '] Worker returned ' + processedData.length.toLocaleString() + ' processed rows');
 
-                // Update min/max from initial data
-                processedInitial.forEach(r => {
+                // Filter out rows with null/undefined x or y values
+                const validData = processedData.filter(r => {
+                    const xVal = r[xField];
+                    const yVal = r[yField];
+                    return xVal !== null && xVal !== undefined && !isNaN(xVal) &&
+                        yVal !== null && yVal !== undefined && !isNaN(yVal);
+                });
+
+                console.log('[Plot ' + tabIndex + '] Filtered to ' + validData.length.toLocaleString() + ' valid points for ' + xField + ' vs ' + yField);
+                
+                // If this is a large dataset, warn about performance
+                if (validData.length > 1000000) {
+                    console.warn('[Plot ' + tabIndex + '] Large dataset: ' + validData.length.toLocaleString() + ' points may cause performance issues');
+                }
+
+                // Update min/max from valid data
+                validData.forEach(r => {
                     const xVal = r[xField];
                     const yVal = r[yField];
                     if (xVal !== null && xVal !== undefined && !isNaN(xVal)) {
@@ -1060,37 +1271,70 @@
                     }
                 });
 
-                // Downsample for initial display to reduce overlapping points
-                const sampledInitial = downsampleForDisplay(processedInitial, xField, yField, colorField, 800);
+                // For Temperature vs Compactness, apply downsampling to improve performance
+                // Compactness values are tightly clustered causing extreme overdraw with 3.8M points
+                let plotData;
+                let allDataForZoom = null; // Store full dataset for dynamic zoom resampling
+                if (xField === 'compactness' || yField === 'compactness') {
+                    console.log('[Plot ' + tabIndex + '] Applying smart downsampling for compactness plot (extreme clustering)');
+                    plotData = downsampleForDisplay(validData, xField, yField, colorField, 1200);
+                    allDataForZoom = validData; // Keep full data for zoom interactions
+                    console.log('[Plot ' + tabIndex + '] Downsampled from ' + validData.length.toLocaleString() + ' to ' + plotData.length.toLocaleString() + ' points');
+                } else {
+                    // Use all valid data without downsampling for other plots
+                    plotData = validData;
+                }
 
-                // Calculate color range from ALL processed data (not just sampled) for consistent colors
-                const colorVals = processedInitial.map(r => r[colorField]).filter(v => v !== null && v !== undefined && v > 0);
-                let colorMin = Math.min(...colorVals);
-                let colorMax = Math.max(...colorVals);
+                // Calculate color range from ALL valid data for consistent colors
+                // Process in chunks to avoid "too many arguments" error
+                let colorMin = Infinity;
+                let colorMax = -Infinity;
+                for (let i = 0; i < plotData.length; i++) {
+                    const val = plotData[i][colorField];
+                    if (val !== null && val !== undefined && val > 0) {
+                        if (val < colorMin) colorMin = val;
+                        if (val > colorMax) colorMax = val;
+                    }
+                }
+
+                // Pre-allocate arrays for performance
+                const xData = new Array(plotData.length);
+                const yData = new Array(plotData.length);
+                const colorData = new Array(plotData.length);
+                const systemData = new Array(plotData.length);
+                const textData = new Array(plotData.length);
+
+                for (let i = 0; i < plotData.length; i++) {
+                    xData[i] = plotData[i][xField];
+                    yData[i] = plotData[i][yField];
+                    colorData[i] = plotData[i][colorField];
+                    systemData[i] = plotData[i].system;
+                    textData[i] = plotData[i].hoverText;
+                }
 
                 const trace = {
-                    x: sampledInitial.map(r => r[xField]),
-                    y: sampledInitial.map(r => r[yField]),
+                    x: xData,
+                    y: yData,
                     mode: 'markers',
                     type: 'scattergl',
                     marker: {
-                        size: 4,
-                        color: sampledInitial.map(r => r[colorField]),
+                        size: 3,
+                        color: colorData,
                         colorscale: plotConfig.colorscale === 'viridis' ? 'Viridis' : 'Plasma',
                         showscale: true,
                         colorbar: { title: plotConfig.colorbar },
                         cmin: colorMin,
                         cmax: colorMax
                     },
-                    text: sampledInitial.map(r => r.hoverText),
-                    customdata: sampledInitial.map(r => r.system),
+                    customdata: systemData,
+                    text: textData,
                     hoverinfo: 'text'
                 };
 
                 // Determine axis types based on field names
-                // Log scale for everything EXCEPT age, mass, and radius (solarRadius)
-                const xType = (plotConfig.x === 'age' || plotConfig.x === 'mass' || plotConfig.x === 'solarRadius') ? 'linear' : 'log';
-                const yType = (plotConfig.y === 'age' || plotConfig.y === 'mass' || plotConfig.y === 'solarRadius') ? 'linear' : 'log';
+                // Log scale for everything EXCEPT age, mass, radius (solarRadius), temperature, and compactness
+                const xType = (plotConfig.x === 'age' || plotConfig.x === 'mass' || plotConfig.x === 'solarRadius' || plotConfig.x === 'temperature' || plotConfig.x === 'compactness') ? 'linear' : 'log';
+                const yType = (plotConfig.y === 'age' || plotConfig.y === 'mass' || plotConfig.y === 'solarRadius' || plotConfig.y === 'temperature' || plotConfig.y === 'compactness') ? 'linear' : 'log';
 
                 const layout = {
                     title: plotConfig.title,
@@ -1106,16 +1350,82 @@
                     showlegend: false
                 };
 
+                // Add rotational period unit boundaries
+                const periodBoundaries = [
+                    { value: 1 / 86400000, label: '1 ms', color: '#555555' },
+                    { value: 1 / 86400, label: '1 s', color: '#666666' },
+                    { value: 1 / 1440, label: '1 min', color: '#777777' },
+                    { value: 1 / 24, label: '1 hr', color: '#888888' },
+                    { value: 1, label: '1 day', color: '#999999' },
+                    { value: 7, label: '1 wk', color: '#aaaaaa' },
+                    { value: 30, label: '1 mon', color: '#bbbbbb' },
+                    { value: 365.25, label: '1 yr', color: '#cccccc' },
+                    { value: 3652.5, label: '10 yr', color: '#dddddd' },
+                    { value: 36525, label: '100 yr', color: '#eeeeee' }
+                ];
+
+                // Add period boundaries for plots with rotationalPeriod on Y axis (plots 0, 1, 7)
+                if ([0, 1, 7].includes(tabIndex)) {
+                    console.log('[Plot ' + tabIndex + '] Data Y range:', dataYMin, 'to', dataYMax);
+                    layout.shapes = [];
+                    // Only show boundaries within the data range
+                    periodBoundaries.forEach(boundary => {
+                        const inRange = boundary.value >= dataYMin && boundary.value <= dataYMax;
+                        console.log('[Plot ' + tabIndex + '] Boundary', boundary.label, ':', boundary.value, 'in range?', inRange);
+                        if (inRange) {
+                            layout.shapes.push({
+                                type: 'line',
+                                x0: 0,
+                                x1: 1,
+                                xref: 'paper',
+                                y0: boundary.value,
+                                y1: boundary.value,
+                                yref: 'y',
+                                line: { color: boundary.color, width: 1, dash: 'dot' },
+                                layer: 'below',
+                                name: boundary.label
+                            });
+                        }
+                    });
+                }
+
+                // Add period boundaries for plot with rotationalPeriod on X axis (plot 6: P-Pdot)
+                if (tabIndex === 6) {
+                    console.log('[Plot ' + tabIndex + '] Data X range:', dataXMin, 'to', dataXMax);
+                    layout.shapes = [];
+                    // Only show boundaries within the data range
+                    periodBoundaries.forEach(boundary => {
+                        const inRange = boundary.value >= dataXMin && boundary.value <= dataXMax;
+                        console.log('[Plot ' + tabIndex + '] Boundary', boundary.label, ':', boundary.value, 'in range?', inRange);
+                        if (inRange) {
+                            layout.shapes.push({
+                                type: 'line',
+                                x0: boundary.value,
+                                x1: boundary.value,
+                                xref: 'x',
+                                y0: 0,
+                                y1: 1,
+                                yref: 'paper',
+                                line: { color: boundary.color, width: 1, dash: 'dot' },
+                                layer: 'below'
+                            });
+                        }
+                    });
+                }
+
                 // Add reference lines and annotations
                 if (plotConfig.reference_line) {
-                    layout.shapes = [{
+                    if (!layout.shapes) layout.shapes = [];
+                    layout.shapes.push({
                         type: 'line',
-                        x0: Math.min(...trace.x),
-                        x1: Math.max(...trace.x),
+                        x0: 0,
+                        x1: 1,
+                        xref: 'paper',
                         y0: plotConfig.reference_line,
                         y1: plotConfig.reference_line,
+                        yref: 'y',
                         line: { color: '#00ff00', width: 2, dash: 'dash' }
-                    }];
+                    });
                 }
 
                 // Add physics constraint lines for Mass vs Radius plot (plot index 5)
@@ -1154,21 +1464,6 @@
                             yref: 'y'
                         }
                     ];
-
-                    // Add Chandrasekhar limit line if 1.4 is within data range
-                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
-                        layout.shapes.push({
-                            type: 'line',
-                            x0: 1.4,
-                            x1: 1.4,
-                            y0: dataYMin,
-                            y1: dataYMax,
-                            line: { color: '#00ccff', width: 2.5, dash: 'dot' },
-                            layer: 'below',
-                            xref: 'x',
-                            yref: 'y'
-                        });
-                    }
 
                     // Only add TOV limit line if 2.5 is within data range
                     if (2.5 >= dataXMin && 2.5 <= dataXMax) {
@@ -1369,63 +1664,140 @@
                     });
                 }
 
-                Plotly.newPlot(plotDiv, [trace], layout, {
-                    responsive: true,
-                    displayModeBar: true
-                });
+                // Prepare boundary hover traces
+                const boundaryTraces = [];
+
+                // Add hover traces for period boundaries on Y axis
+                if ([0, 1, 7].includes(tabIndex)) {
+                    periodBoundaries.forEach(boundary => {
+                        if (boundary.value >= dataYMin && boundary.value <= dataYMax) {
+                            boundaryTraces.push({
+                                x: [dataXMin, dataXMax],
+                                y: [boundary.value, boundary.value],
+                                mode: 'lines',
+                                line: { width: 0 },
+                                hoverinfo: 'text',
+                                text: boundary.label,
+                                showlegend: false
+                            });
+                        }
+                    });
+                }
+
+                // Add hover traces for period boundaries on X axis
+                if (tabIndex === 6) {
+                    periodBoundaries.forEach(boundary => {
+                        if (boundary.value >= dataXMin && boundary.value <= dataXMax) {
+                            boundaryTraces.push({
+                                x: [boundary.value, boundary.value],
+                                y: [dataYMin, dataYMax],
+                                mode: 'lines',
+                                line: { width: 0 },
+                                hoverinfo: 'text',
+                                text: boundary.label,
+                                showlegend: false
+                            });
+                        }
+                    });
+                }
 
                 // Add legend key for physics constraint lines
                 if (tabIndex === 5) {
                     layout.annotations = layout.annotations || [];
-                    let xPos = 0.02;
+                    let yPos = 0.98;
 
                     layout.annotations.push({
-                        x: xPos,
-                        y: -0.15,
+                        x: 0.98,
+                        y: yPos,
                         xref: 'paper',
                         yref: 'paper',
                         text: '⋯⋯⋯ Schwarzschild Radius',
                         showarrow: false,
                         font: { color: '#ff0000', size: 12 },
-                        xanchor: 'left',
+                        xanchor: 'right',
                         yanchor: 'top',
-                        bgcolor: 'rgba(0,0,0,0.5)',
+                        bgcolor: 'rgba(0,0,0,0.7)',
                         borderpad: 4
                     });
 
-                    if (1.4 >= dataXMin && 1.4 <= dataXMax) {
-                        xPos += 0.25;
-                        layout.annotations.push({
-                            x: xPos,
-                            y: -0.15,
-                            xref: 'paper',
-                            yref: 'paper',
-                            text: '⋯⋯⋯ Chandrasekhar Limit (1.4 M☉)',
-                            showarrow: false,
-                            font: { color: '#00ccff', size: 12 },
-                            xanchor: 'left',
-                            yanchor: 'top',
-                            bgcolor: 'rgba(0,0,0,0.5)',
-                            borderpad: 4
-                        });
-                    }
-
                     if (2.5 >= dataXMin && 2.5 <= dataXMax) {
-                        xPos += 0.35;
+                        yPos -= 0.06;
                         layout.annotations.push({
-                            x: xPos,
-                            y: -0.15,
+                            x: 0.98,
+                            y: yPos,
                             xref: 'paper',
                             yref: 'paper',
                             text: '⋯⋯⋯ TOV Limit (2.5 M☉)',
                             showarrow: false,
                             font: { color: '#9933ff', size: 12 },
-                            xanchor: 'left',
+                            xanchor: 'right',
                             yanchor: 'top',
-                            bgcolor: 'rgba(0,0,0,0.5)',
+                            bgcolor: 'rgba(0,0,0,0.7)',
                             borderpad: 4
                         });
                     }
+                }
+
+                // Update loading message for rendering phase
+                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering ' + plotData.length.toLocaleString() + ' points on chart...';
+
+                // Use requestAnimationFrame to allow UI update before blocking render
+                await new Promise(resolve => requestAnimationFrame(resolve));
+
+                const renderStart = performance.now();
+                Plotly.newPlot(plotDiv, [trace, ...boundaryTraces], layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+                const renderTime = ((performance.now() - renderStart) / 1000).toFixed(1);
+                console.log('[Plot ' + tabIndex + '] Plotly render took ' + renderTime + 's');
+
+                // Show plot div and resize to fit
+                plotDiv.style.display = 'block';
+                Plotly.Plots.resize(plotDiv);
+
+                // Add zoom handler for dynamic resampling on compactness plot
+                if (allDataForZoom) {
+                    plotDiv.on('plotly_relayout', function(eventData) {
+                        // Check if this is a zoom event (has xaxis.range or yaxis.range)
+                        if (!eventData['xaxis.range[0]'] && !eventData['xaxis.range']) return;
+                        
+                        console.log('[Plot ' + tabIndex + '] Zoom detected, resampling data for current view...');
+                        
+                        // Get current axis ranges
+                        const xRange = eventData['xaxis.range'] || [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']];
+                        const yRange = eventData['yaxis.range'] || [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
+                        
+                        if (!xRange || !yRange) return;
+                        
+                        // Filter data to visible range
+                        const visibleData = allDataForZoom.filter(r => {
+                            const xVal = r[xField];
+                            const yVal = r[yField];
+                            return xVal >= xRange[0] && xVal <= xRange[1] &&
+                                   yVal >= yRange[0] && yVal <= yRange[1];
+                        });
+                        
+                        console.log('[Plot ' + tabIndex + '] Visible data: ' + visibleData.length.toLocaleString() + ' points in view');
+                        
+                        // Resample visible data with finer grid when zoomed in
+                        const resampledData = downsampleForDisplay(visibleData, xField, yField, colorField, 1500);
+                        console.log('[Plot ' + tabIndex + '] Resampled to ' + resampledData.length.toLocaleString() + ' points for zoomed view');
+                        
+                        // Build new data arrays
+                        const newXData = resampledData.map(r => r[xField]);
+                        const newYData = resampledData.map(r => r[yField]);
+                        const newColorData = resampledData.map(r => r[colorField]);
+                        const newTextData = resampledData.map(r => r.hoverText);
+                        
+                        // Update the plot with new data
+                        Plotly.restyle(plotDiv, {
+                            x: [newXData],
+                            y: [newYData],
+                            'marker.color': [newColorData],
+                            text: [newTextData]
+                        }, 0);
+                    });
                 }
 
                 if (tabIndex === 6) {
@@ -1560,421 +1932,15 @@
                     }
                 });
 
-                let currentOffset = INITIAL_CHUNK_SIZE;
-                loadingDiv.innerHTML = '<div class="spinner"></div>Streaming data as it loads...';
-
-                // Update progress periodically using requestIdleCallback
-                const progressInterval = setInterval(() => {
-                    if (csvData.length > INITIAL_CHUNK_SIZE) {
-                        requestIdleCallback(() => {
-                            loadingDiv.innerHTML = '<div class="spinner"></div>Loaded ' + Math.min(currentOffset, csvData.length).toLocaleString() + ' of 3,318,091 points...';
-                        });
-                    }
-                }, 1000); // Reduced frequency from 500ms to 1000ms
-
-                (async () => {
-                    try {
-                        let offset = INITIAL_CHUNK_SIZE;
-                        let updateCount = 0;
-                        let pendingData = [];
-                        let isUpdating = false;
-
-                        console.log('[Plot ' + tabIndex + '] Starting streaming loop, initial csvData.length:', csvData.length);
-
-                        // Optimized batch updates - non-blocking
-                        let lastUpdateTime = performance.now();
-                        const flushPending = async () => {
-                            if (pendingData.length === 0 || isUpdating) return;
-
-                            isUpdating = true;
-                            const dataToUpdate = pendingData.slice();
-                            const pointCount = pendingData.length;
-                            pendingData = [];
-
-                            const updateStart = performance.now();
-                            console.log('[Plot ' + tabIndex + '] Update #' + (updateCount + 1) + ': Adding ' + pointCount.toLocaleString() + ' points (total will be ~' + (offset + pointCount).toLocaleString() + ')');
-
-                            await new Promise(resolve => {
-                                Plotly.extendTraces(plotDiv, {
-                                    x: [dataToUpdate.map(r => r[xField])],
-                                    y: [dataToUpdate.map(r => r[yField])],
-                                    'marker.color': [dataToUpdate.map(r => r[colorField])],
-                                    text: [dataToUpdate.map(r => r.hoverText)],
-                                    customdata: [dataToUpdate.map(r => r.system)]
-                                }, [0]);
-                                requestAnimationFrame(resolve);
-                            });
-
-                            const updateDuration = performance.now() - updateStart;
-                            console.log('[Plot ' + tabIndex + '] Update #' + (updateCount + 1) + ' completed in ' + updateDuration.toFixed(1) + 'ms');
-
-                            updateCount++;
-                            lastUpdateTime = performance.now();
-                            isUpdating = false;
-
-                            // Trigger next update if data accumulated while updating
-                            if (pendingData.length >= UPDATE_BATCH_SIZE) {
-                                flushPending();
-                            }
-                        };
-
-                        while (true) {
-                            // Wait for new data
-                            while (csvData.length <= offset && !csvComplete) {
-                                await new Promise(resolve => setTimeout(resolve, 100));
-                            }
-
-                            if (offset >= csvData.length) break;
-
-                            const end = Math.min(offset + CHUNK_SIZE, csvData.length);
-                            const chunk = csvData.slice(offset, end);
-
-                            if (chunk.length > 0) {
-                                // Process chunk in worker
-                                const processedChunk = await processWithWorker(chunk, null);
-
-                                // Update min/max from chunk
-                                processedChunk.forEach(r => {
-                                    const xVal = r[xField];
-                                    const yVal = r[yField];
-                                    if (xVal !== null && xVal !== undefined && !isNaN(xVal)) {
-                                        dataXMin = Math.min(dataXMin, xVal);
-                                        dataXMax = Math.max(dataXMax, xVal);
-                                    }
-                                    if (yVal !== null && yVal !== undefined && !isNaN(yVal)) {
-                                        dataYMin = Math.min(dataYMin, yVal);
-                                        dataYMax = Math.max(dataYMax, yVal);
-                                    }
-                                });
-
-                                // Downsample chunk to reduce overlaps
-                                const sampledChunk = downsampleForDisplay(processedChunk, xField, yField, colorField, 800);
-
-                                // Add to pending batch (store full rows)
-                                pendingData.push(...sampledChunk);
-
-                                // Trigger update when batch size reached (non-blocking)
-                                if (pendingData.length >= UPDATE_BATCH_SIZE && !isUpdating) {
-                                    flushPending(); // Fire and forget
-                                }
-                            }
-
-                            currentOffset = offset = end;
-
-                            if (offset % 100000 === 0) {
-                                console.log('[Plot ' + tabIndex + '] Processed ' + offset.toLocaleString() + ' rows');
-                            }
-
-                            // Yield control to browser between chunks
-                            await new Promise(resolve => setTimeout(resolve, 5));
-                        }
-
-                        // Flush any remaining data
-                        await flushPending();
-
-                        // Wait for any final update to complete
-                        while (isUpdating) {
-                            await new Promise(resolve => setTimeout(resolve, 50));
-                        }
-
-                        console.log('[Plot ' + tabIndex + '] Streaming loop finished, final csvData.length:', csvData.length);
-
-                        // Update physics constraint lines with final data bounds
-                        if (tabIndex === 5) {
-                            const schwarzschildSlope = 0.00000424;
-
-                            // Calculate Schwarzschild line endpoints constrained to final data Y bounds
-                            let schwY0 = dataXMin * schwarzschildSlope;
-                            let schwY1 = dataXMax * schwarzschildSlope;
-                            let schwX0 = dataXMin;
-                            let schwX1 = dataXMax;
-
-                            // Clip to Y bounds
-                            if (schwY0 < dataYMin) {
-                                schwX0 = dataYMin / schwarzschildSlope;
-                                schwY0 = dataYMin;
-                            }
-                            if (schwY1 > dataYMax) {
-                                schwX1 = dataYMax / schwarzschildSlope;
-                                schwY1 = dataYMax;
-                            }
-
-                            const finalShapes = [
-                                {
-                                    type: 'line',
-                                    x0: schwX0,
-                                    x1: schwX1,
-                                    y0: schwY0,
-                                    y1: schwY1,
-                                    line: { color: '#ff0000', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                }
-                            ];
-
-                            if (1.4 >= dataXMin && 1.4 <= dataXMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: 1.4,
-                                    x1: 1.4,
-                                    y0: dataYMin,
-                                    y1: dataYMax,
-                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            if (2.5 >= dataXMin && 2.5 <= dataXMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: 2.5,
-                                    x1: 2.5,
-                                    y0: dataYMin,
-                                    y1: dataYMax,
-                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            Plotly.relayout(plotDiv, { shapes: finalShapes });
-                            console.log('[Plot ' + tabIndex + '] Updated physics lines to final bounds: X[' + dataXMin + ', ' + dataXMax + '], Y[' + dataYMin + ', ' + dataYMax + ']');
-                        }
-
-                        // Update P-Pdot diagram lines with final data bounds
-                        if (tabIndex === 6) {
-                            const finalShapes = [];
-                            const finalAnnotations = [];
-
-                            // Death line with final bounds
-                            const pRangeSeconds = [dataXMin * 86400, dataXMax * 86400];
-                            const deathLinePoints = [];
-                            for (let logP = Math.log10(pRangeSeconds[0]); logP <= Math.log10(pRangeSeconds[1]); logP += 0.1) {
-                                const pSeconds = Math.pow(10, logP);
-                                const pdot = Math.pow(10, -15.5 + 0.5 * logP);
-                                deathLinePoints.push({ p: pSeconds / 86400, pdot: pdot });
-                            }
-
-                            for (let i = 0; i < deathLinePoints.length - 1; i++) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: deathLinePoints[i].p,
-                                    x1: deathLinePoints[i + 1].p,
-                                    y0: deathLinePoints[i].pdot,
-                                    y1: deathLinePoints[i + 1].pdot,
-                                    line: { color: '#ff0000', width: 2.5, dash: 'dash' },
-                                    layer: 'below'
-                                });
-                            }
-
-                            // Age contours with final bounds
-                            const ageContours = [
-                                { years: 1e3, label: '1 kyr', color: '#888888' },
-                                { years: 1e6, label: '1 Myr', color: '#888888' },
-                                { years: 1e9, label: '1 Gyr', color: '#888888' }
-                            ];
-
-                            ageContours.forEach(({ years, label, color }) => {
-                                const ageSeconds = years * 365.25 * 86400;
-                                const ageLinePoints = [];
-
-                                for (let logP = Math.log10(pRangeSeconds[0]); logP <= Math.log10(pRangeSeconds[1]); logP += 0.1) {
-                                    const pSeconds = Math.pow(10, logP);
-                                    const pdot = pSeconds / (2 * ageSeconds);
-                                    ageLinePoints.push({ p: pSeconds / 86400, pdot: pdot });
-                                }
-
-                                for (let i = 0; i < ageLinePoints.length - 1; i++) {
-                                    finalShapes.push({
-                                        type: 'line',
-                                        x0: ageLinePoints[i].p,
-                                        x1: ageLinePoints[i + 1].p,
-                                        y0: ageLinePoints[i].pdot,
-                                        y1: ageLinePoints[i + 1].pdot,
-                                        line: { color: color, width: 1.5, dash: 'dot' },
-                                        layer: 'below'
-                                    });
-                                }
-
-                                const lastPoint = ageLinePoints[ageLinePoints.length - 1];
-                                finalAnnotations.push({
-                                    x: Math.log10(lastPoint.p),
-                                    y: Math.log10(lastPoint.pdot),
-                                    text: label,
-                                    showarrow: false,
-                                    font: { color: color, size: 11 },
-                                    xanchor: 'left',
-                                    xshift: 5
-                                });
-                            });
-
-                            Plotly.relayout(plotDiv, { shapes: finalShapes, annotations: finalAnnotations });
-                            console.log('[Plot ' + tabIndex + '] Updated P-Pdot physics lines to final bounds');
-                        }
-
-                        // Update Rotational Period vs Mass plot lines with final data bounds (plot index 7)
-                        if (tabIndex === 7) {
-                            const finalShapes = [];
-
-                            if (1.4 >= dataXMin && 1.4 <= dataXMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: 1.4,
-                                    x1: 1.4,
-                                    y0: dataYMin,
-                                    y1: dataYMax,
-                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            if (2.5 >= dataXMin && 2.5 <= dataXMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: 2.5,
-                                    x1: 2.5,
-                                    y0: dataYMin,
-                                    y1: dataYMax,
-                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            Plotly.relayout(plotDiv, { shapes: finalShapes });
-                            console.log('[Plot ' + tabIndex + '] Updated mass limit lines to final bounds');
-                        }
-
-                        // Update Mass vs Age plot lines with final data bounds (plot index 8)
-                        if (tabIndex === 8) {
-                            const finalShapes = [];
-
-                            if (1.4 >= dataYMin && 1.4 <= dataYMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: dataXMin,
-                                    x1: dataXMax,
-                                    y0: 1.4,
-                                    y1: 1.4,
-                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            if (2.5 >= dataYMin && 2.5 <= dataYMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: dataXMin,
-                                    x1: dataXMax,
-                                    y0: 2.5,
-                                    y1: 2.5,
-                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            Plotly.relayout(plotDiv, { shapes: finalShapes });
-                            console.log('[Plot ' + tabIndex + '] Updated mass limit lines to final bounds');
-                        }
-
-                        // Update Tangential Velocity vs Mass plot lines with final data bounds (plot index 9)
-                        if (tabIndex === 9) {
-                            const finalShapes = [];
-                            const finalAnnotations = [];
-                            const SPEED_OF_LIGHT = 299792; // km/s
-
-                            // Speed of light horizontal line
-                            if (SPEED_OF_LIGHT >= dataYMin && SPEED_OF_LIGHT <= dataYMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: dataXMin,
-                                    x1: dataXMax,
-                                    y0: SPEED_OF_LIGHT,
-                                    y1: SPEED_OF_LIGHT,
-                                    line: { color: '#ff0000', width: 2.5, dash: 'dash' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            // Chandrasekhar limit (1.4 M☉)
-                            if (1.4 >= dataXMin && 1.4 <= dataXMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: 1.4,
-                                    x1: 1.4,
-                                    y0: dataYMin,
-                                    y1: dataYMax,
-                                    line: { color: '#00ccff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            // TOV limit (2.5 M☉)
-                            if (2.5 >= dataXMin && 2.5 <= dataXMax) {
-                                finalShapes.push({
-                                    type: 'line',
-                                    x0: 2.5,
-                                    x1: 2.5,
-                                    y0: dataYMin,
-                                    y1: dataYMax,
-                                    line: { color: '#9933ff', width: 2.5, dash: 'dot' },
-                                    layer: 'below',
-                                    xref: 'x',
-                                    yref: 'y'
-                                });
-                            }
-
-                            // Add annotations
-                            finalAnnotations.push({
-                                x: 0.5,
-                                y: -0.15,
-                                xref: 'paper',
-                                yref: 'paper',
-                                text: 'Chandrasekhar limit (1.4 M☉) | TOV limit (2.5 M☉) | Speed of light (c)',
-                                showarrow: false,
-                                font: { color: '#aaa', size: 11 },
-                                xanchor: 'center',
-                                yanchor: 'top'
-                            });
-
-                            Plotly.relayout(plotDiv, { shapes: finalShapes, annotations: finalAnnotations });
-                            console.log('[Plot ' + tabIndex + '] Updated velocity and mass limit lines to final bounds');
-                        }
-
-                        clearInterval(progressInterval);
-
-                        // Calculate total points rendered
-                        const totalPoints = csvData.length;
-                        loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + totalPoints.toLocaleString() + ' data points</div>';
-
-                        loadedTabs.add(tabIndex);
-
-                        const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
-                        console.log('[Plot ' + tabIndex + '] Complete in ' + elapsed + 's with ' + updateCount + ' updates');
-                    } catch (err) {
-                        console.error('[Plot ' + tabIndex + '] Streaming error:', err);
-                        loadingDiv.innerHTML = '<div style="color: #f44336;">Error streaming data: ' + err.message + '</div>';
-                    }
-                })();
+                // All data is loaded, show final status
+                const totalTime = ((performance.now() - startTime) / 1000).toFixed(1);
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + plotData.length.toLocaleString() + ' points in ' + totalTime + 's (render: ' + renderTime + 's) | Click any point to view in Canonn Signals</div>';
+                loadedTabs.add(tabIndex);
 
             } catch (error) {
                 console.error('[Plot ' + tabIndex + '] Error:', error);
                 loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+                plotDiv.style.display = 'block';
             }
         }
 
