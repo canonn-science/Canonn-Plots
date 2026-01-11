@@ -1,0 +1,346 @@
+{
+  "metadata": {
+    "generated_at": "2026-01-11T08:27:25",
+    "total_systems_processed": 175389679,
+    "regions_included": 42,
+    "total_stars_with_age": 124095054
+  },
+  "regions": {
+    "1": {
+      "id": 1,
+      "name": "Region 1",
+      "total_stars": 5651507,
+      "stars_with_age": 5642306,
+      "sum_age_myr": 30028479430.0,
+      "average_age_myr": 5322.02
+    },
+    "2": {
+      "id": 2,
+      "name": "Region 2",
+      "total_stars": 6576321,
+      "stars_with_age": 6564342,
+      "sum_age_myr": 31114929196.0,
+      "average_age_myr": 4739.99
+    },
+    "3": {
+      "id": 3,
+      "name": "Region 3",
+      "total_stars": 2682605,
+      "stars_with_age": 2679510,
+      "sum_age_myr": 12463673003.0,
+      "average_age_myr": 4651.47
+    },
+    "4": {
+      "id": 4,
+      "name": "Region 4",
+      "total_stars": 6333121,
+      "stars_with_age": 6319786,
+      "sum_age_myr": 29665481755.0,
+      "average_age_myr": 4694.06
+    },
+    "5": {
+      "id": 5,
+      "name": "Region 5",
+      "total_stars": 4325982,
+      "stars_with_age": 4315391,
+      "sum_age_myr": 20244460379.0,
+      "average_age_myr": 4691.22
+    },
+    "6": {
+      "id": 6,
+      "name": "Region 6",
+      "total_stars": 2025132,
+      "stars_with_age": 2021795,
+      "sum_age_myr": 10649671186.0,
+      "average_age_myr": 5267.43
+    },
+    "7": {
+      "id": 7,
+      "name": "Region 7",
+      "total_stars": 2058506,
+      "stars_with_age": 2056017,
+      "sum_age_myr": 9684368874.0,
+      "average_age_myr": 4710.26
+    },
+    "8": {
+      "id": 8,
+      "name": "Region 8",
+      "total_stars": 1085147,
+      "stars_with_age": 1082821,
+      "sum_age_myr": 5244915159.0,
+      "average_age_myr": 4843.75
+    },
+    "9": {
+      "id": 9,
+      "name": "Region 9",
+      "total_stars": 14624088,
+      "stars_with_age": 14592537,
+      "sum_age_myr": 71775765803.0,
+      "average_age_myr": 4918.66
+    },
+    "10": {
+      "id": 10,
+      "name": "Region 10",
+      "total_stars": 4663705,
+      "stars_with_age": 4653160,
+      "sum_age_myr": 24697435497.0,
+      "average_age_myr": 5307.67
+    },
+    "11": {
+      "id": 11,
+      "name": "Region 11",
+      "total_stars": 586970,
+      "stars_with_age": 585668,
+      "sum_age_myr": 3433336545.0,
+      "average_age_myr": 5862.26
+    },
+    "12": {
+      "id": 12,
+      "name": "Region 12",
+      "total_stars": 903993,
+      "stars_with_age": 902112,
+      "sum_age_myr": 5472190246.0,
+      "average_age_myr": 6065.98
+    },
+    "13": {
+      "id": 13,
+      "name": "Region 13",
+      "total_stars": 2365122,
+      "stars_with_age": 2361620,
+      "sum_age_myr": 15318393343.0,
+      "average_age_myr": 6486.39
+    },
+    "14": {
+      "id": 14,
+      "name": "Region 14",
+      "total_stars": 560220,
+      "stars_with_age": 559154,
+      "sum_age_myr": 3199754019.0,
+      "average_age_myr": 5722.49
+    },
+    "15": {
+      "id": 15,
+      "name": "Region 15",
+      "total_stars": 704898,
+      "stars_with_age": 704010,
+      "sum_age_myr": 3313804245.0,
+      "average_age_myr": 4707.04
+    },
+    "16": {
+      "id": 16,
+      "name": "Region 16",
+      "total_stars": 1127530,
+      "stars_with_age": 1124852,
+      "sum_age_myr": 6160371491.0,
+      "average_age_myr": 5476.61
+    },
+    "17": {
+      "id": 17,
+      "name": "Region 17",
+      "total_stars": 1425416,
+      "stars_with_age": 1422703,
+      "sum_age_myr": 8355368816.0,
+      "average_age_myr": 5872.88
+    },
+    "18": {
+      "id": 18,
+      "name": "Region 18",
+      "total_stars": 31377136,
+      "stars_with_age": 31316391,
+      "sum_age_myr": 177922785903.0,
+      "average_age_myr": 5681.46
+    },
+    "19": {
+      "id": 19,
+      "name": "Region 19",
+      "total_stars": 3895810,
+      "stars_with_age": 3887910,
+      "sum_age_myr": 22753305634.0,
+      "average_age_myr": 5852.32
+    },
+    "20": {
+      "id": 20,
+      "name": "Region 20",
+      "total_stars": 715890,
+      "stars_with_age": 714815,
+      "sum_age_myr": 4231570588.0,
+      "average_age_myr": 5919.81
+    },
+    "21": {
+      "id": 21,
+      "name": "Region 21",
+      "total_stars": 455490,
+      "stars_with_age": 454610,
+      "sum_age_myr": 2651190991.0,
+      "average_age_myr": 5831.79
+    },
+    "22": {
+      "id": 22,
+      "name": "Region 22",
+      "total_stars": 579367,
+      "stars_with_age": 578659,
+      "sum_age_myr": 3518335201.0,
+      "average_age_myr": 6080.15
+    },
+    "23": {
+      "id": 23,
+      "name": "Region 23",
+      "total_stars": 992635,
+      "stars_with_age": 989889,
+      "sum_age_myr": 6777899247.0,
+      "average_age_myr": 6847.13
+    },
+    "24": {
+      "id": 24,
+      "name": "Region 24",
+      "total_stars": 3653842,
+      "stars_with_age": 3648605,
+      "sum_age_myr": 21725411365.0,
+      "average_age_myr": 5954.44
+    },
+    "25": {
+      "id": 25,
+      "name": "Region 25",
+      "total_stars": 525221,
+      "stars_with_age": 523998,
+      "sum_age_myr": 3033611607.0,
+      "average_age_myr": 5789.36
+    },
+    "26": {
+      "id": 26,
+      "name": "Region 26",
+      "total_stars": 547438,
+      "stars_with_age": 546633,
+      "sum_age_myr": 3333620222.0,
+      "average_age_myr": 6098.46
+    },
+    "27": {
+      "id": 27,
+      "name": "Region 27",
+      "total_stars": 940796,
+      "stars_with_age": 938137,
+      "sum_age_myr": 5438572463.0,
+      "average_age_myr": 5797.2
+    },
+    "28": {
+      "id": 28,
+      "name": "Region 28",
+      "total_stars": 47609,
+      "stars_with_age": 47550,
+      "sum_age_myr": 152156862.0,
+      "average_age_myr": 3199.93
+    },
+    "29": {
+      "id": 29,
+      "name": "Region 29",
+      "total_stars": 1183016,
+      "stars_with_age": 1181520,
+      "sum_age_myr": 7086795348.0,
+      "average_age_myr": 5998.03
+    },
+    "30": {
+      "id": 30,
+      "name": "Region 30",
+      "total_stars": 783943,
+      "stars_with_age": 781114,
+      "sum_age_myr": 4073916175.0,
+      "average_age_myr": 5215.52
+    },
+    "31": {
+      "id": 31,
+      "name": "Region 31",
+      "total_stars": 1562898,
+      "stars_with_age": 1560843,
+      "sum_age_myr": 9577117678.0,
+      "average_age_myr": 6135.86
+    },
+    "32": {
+      "id": 32,
+      "name": "Region 32",
+      "total_stars": 1225598,
+      "stars_with_age": 1223160,
+      "sum_age_myr": 6983141677.0,
+      "average_age_myr": 5709.1
+    },
+    "33": {
+      "id": 33,
+      "name": "Region 33",
+      "total_stars": 5510245,
+      "stars_with_age": 5498221,
+      "sum_age_myr": 32211424735.0,
+      "average_age_myr": 5858.52
+    },
+    "34": {
+      "id": 34,
+      "name": "Region 34",
+      "total_stars": 4481337,
+      "stars_with_age": 4472248,
+      "sum_age_myr": 27589996201.0,
+      "average_age_myr": 6169.16
+    },
+    "35": {
+      "id": 35,
+      "name": "Region 35",
+      "total_stars": 3862928,
+      "stars_with_age": 3854331,
+      "sum_age_myr": 24069366180.0,
+      "average_age_myr": 6244.76
+    },
+    "36": {
+      "id": 36,
+      "name": "Region 36",
+      "total_stars": 929498,
+      "stars_with_age": 927168,
+      "sum_age_myr": 5459350173.0,
+      "average_age_myr": 5888.2
+    },
+    "37": {
+      "id": 37,
+      "name": "Region 37",
+      "total_stars": 209663,
+      "stars_with_age": 209041,
+      "sum_age_myr": 1316576490.0,
+      "average_age_myr": 6298.17
+    },
+    "38": {
+      "id": 38,
+      "name": "Region 38",
+      "total_stars": 741688,
+      "stars_with_age": 739599,
+      "sum_age_myr": 4785693788.0,
+      "average_age_myr": 6470.66
+    },
+    "39": {
+      "id": 39,
+      "name": "Region 39",
+      "total_stars": 241603,
+      "stars_with_age": 241061,
+      "sum_age_myr": 1488860013.0,
+      "average_age_myr": 6176.28
+    },
+    "40": {
+      "id": 40,
+      "name": "Region 40",
+      "total_stars": 931409,
+      "stars_with_age": 930364,
+      "sum_age_myr": 6439663559.0,
+      "average_age_myr": 6921.66
+    },
+    "41": {
+      "id": 41,
+      "name": "Region 41",
+      "total_stars": 942434,
+      "stars_with_age": 940867,
+      "sum_age_myr": 5951903693.0,
+      "average_age_myr": 6325.98
+    },
+    "42": {
+      "id": 42,
+      "name": "Region 42",
+      "total_stars": 300952,
+      "stars_with_age": 300536,
+      "sum_age_myr": 1827388979.0,
+      "average_age_myr": 6080.43
+    }
+  }
+}
