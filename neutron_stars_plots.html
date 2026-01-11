@@ -2721,20 +2721,33 @@
                 plotDiv.style.display = 'block';
                 Plotly.Plots.resize(plotDiv);
 
-                // Add zoom handler for dynamic resampling on compactness plot
-                // Skip zoom handler for spin traces plots as they already have all data loaded
-                if (allDataForZoom && !plotConfig.spinTraces) {
+                // Add zoom handler for dynamic resampling
+                if (allDataForZoom) {
                     let zoomTimeout = null;
                     let loadingOverlay = null;
 
                     // Store original data for reset functionality
-                    const originalData = {
-                        x: [...xData],
-                        y: [...yData],
-                        color: [...colorData],
-                        text: [...textData],
-                        customdata: [...systemData]
-                    };
+                    let originalData;
+                    if (plotConfig.spinTraces) {
+                        // Store data for all three traces
+                        originalData = {
+                            traces: traces.map(t => ({
+                                x: [...t.x],
+                                y: [...t.y],
+                                text: [...t.text],
+                                customdata: [...t.customdata]
+                            }))
+                        };
+                    } else {
+                        // Store data for single trace
+                        originalData = {
+                            x: [...xData],
+                            y: [...yData],
+                            color: [...colorData],
+                            text: [...textData],
+                            customdata: [...systemData]
+                        };
+                    }
 
                     plotDiv.on('plotly_relayout', function (eventData) {
                         console.log('[Plot ' + tabIndex + '] Relayout event:', eventData);
@@ -2749,15 +2762,27 @@
                             }
 
                             // Restore original downsampled data
-                            Plotly.restyle(plotDiv, {
-                                x: [originalData.x],
-                                y: [originalData.y],
-                                'marker.color': [originalData.color],
-                                text: [originalData.text],
-                                customdata: [originalData.customdata]
-                            }, 0);
-
-                            console.log('[Plot ' + tabIndex + '] Original data restored (' + originalData.x.length.toLocaleString() + ' points)');
+                            if (plotConfig.spinTraces) {
+                                // Restore all three traces
+                                const restoreData = {
+                                    x: originalData.traces.map(t => t.x),
+                                    y: originalData.traces.map(t => t.y),
+                                    text: originalData.traces.map(t => t.text),
+                                    customdata: originalData.traces.map(t => t.customdata)
+                                };
+                                Plotly.restyle(plotDiv, restoreData, [0, 1, 2]);
+                                console.log('[Plot ' + tabIndex + '] Original spin traces restored (3 traces)');
+                            } else {
+                                // Restore single trace
+                                Plotly.restyle(plotDiv, {
+                                    x: [originalData.x],
+                                    y: [originalData.y],
+                                    'marker.color': [originalData.color],
+                                    text: [originalData.text],
+                                    customdata: [originalData.customdata]
+                                }, 0);
+                                console.log('[Plot ' + tabIndex + '] Original data restored (' + originalData.x.length.toLocaleString() + ' points)');
+                            }
                             return;
                         }
 
@@ -2827,25 +2852,59 @@
 
                             console.log('[Plot ' + tabIndex + '] Visible data: ' + visibleData.length.toLocaleString() + ' points in view');
 
-                            // Resample visible data with finer grid when zoomed in
-                            const resampledData = downsampleForDisplay(visibleData, xField, yField, colorField, 1000);
-                            console.log('[Plot ' + tabIndex + '] Resampled to ' + resampledData.length.toLocaleString() + ' points for zoomed view');
+                            // Handle spin traces separately if enabled
+                            if (plotConfig.spinTraces) {
+                                // Split by spin state and resample each separately
+                                const spinStates = ['up', 'down', 'none'];
+                                const updateData = {};
 
-                            // Build new data arrays
-                            const newXData = resampledData.map(r => r[xField]);
-                            const newYData = resampledData.map(r => r[yField]);
-                            const newColorData = resampledData.map(r => r[colorField]);
-                            const newTextData = resampledData.map(r => r.hoverText);
-                            const newSystemData = resampledData.map(r => r.system);
+                                spinStates.forEach((spinState, idx) => {
+                                    const spinData = visibleData.filter(r => r.spin === spinState);
+                                    const resampledSpinData = downsampleForDisplay(spinData, xField, yField, colorField, 1000);
 
-                            // Update the plot with new data - include customdata for click handler
-                            await Plotly.restyle(plotDiv, {
-                                x: [newXData],
-                                y: [newYData],
-                                'marker.color': [newColorData],
-                                text: [newTextData],
-                                customdata: [newSystemData]
-                            }, 0);
+                                    console.log('[Plot ' + tabIndex + '] Spin ' + spinState + ': ' + spinData.length.toLocaleString() + ' → ' + resampledSpinData.length.toLocaleString() + ' points');
+
+                                    if (!updateData.x) {
+                                        updateData.x = [];
+                                        updateData.y = [];
+                                        updateData.text = [];
+                                        updateData.customdata = [];
+                                    }
+
+                                    updateData.x.push(resampledSpinData.map(r => r[xField]));
+                                    updateData.y.push(resampledSpinData.map(r => r[yField]));
+                                    updateData.text.push(resampledSpinData.map(r => r.hoverText));
+                                    updateData.customdata.push(resampledSpinData.map(r => r.system));
+                                });
+
+                                // Update all three traces
+                                await Plotly.restyle(plotDiv, {
+                                    x: updateData.x,
+                                    y: updateData.y,
+                                    text: updateData.text,
+                                    customdata: updateData.customdata
+                                }, [0, 1, 2]);
+                            } else {
+                                // Original single-trace logic
+                                const resampledData = downsampleForDisplay(visibleData, xField, yField, colorField, 1000);
+                                console.log('[Plot ' + tabIndex + '] Resampled to ' + resampledData.length.toLocaleString() + ' points for zoomed view');
+
+                                // Build new data arrays
+                                const newXData = resampledData.map(r => r[xField]);
+                                const newYData = resampledData.map(r => r[yField]);
+                                const newColorData = resampledData.map(r => r[colorField]);
+                                const newTextData = resampledData.map(r => r.hoverText);
+                                const newSystemData = resampledData.map(r => r.system);
+
+                                // Update the plot with new data
+                                await Plotly.restyle(plotDiv, {
+                                    x: [newXData],
+                                    y: [newYData],
+                                    'marker.color': [newColorData],
+                                    text: [newTextData],
+                                    customdata: [newSystemData]
+                                }, 0);
+                            }
 
                             // Hide loading overlay
                             loadingOverlay.style.display = 'none';
