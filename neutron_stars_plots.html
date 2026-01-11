@@ -183,8 +183,8 @@
         <button class="tab" onclick="showTab(11)">Rotational Period vs Compactness</button>
         <button class="tab" onclick="showTab(12)">Mass-Radius by Age Groups</button>
         <button class="tab" onclick="showTab(13)">Tangential Velocity vs Compactness</button>
-        <button class="tab" onclick="showTab(14)">Age by Region</button>
-        <button class="tab" onclick="showTab(15)">Average Age by Region</button>
+        <button class="tab" onclick="showTab(14)">Neutron Age by Region</button>
+        <button class="tab" onclick="showTab(15)">Stellar Age by Region</button>
         <button class="tab" onclick="showTab(16)">Histograms</button>
     </div>
 
@@ -322,9 +322,11 @@
     </div>
 
     <div id="tab14" class="tab-content">
-        <div class="help"><strong>Age by Region:</strong> Stacked bar chart showing the distribution of neutron star
-            ages across galactic regions. Each bar represents a region with age groups stacked from youngest (bottom) to
-            oldest (top).
+        <div class="help"><strong>Neutron Age by Region:</strong> Interactive galactic region map and bar chart showing
+            the average age of neutron stars in each region. Click regions on the map for details.
+        </div>
+        <div class="plot-container">
+            <div id="region-map-svg" style="width:100%;overflow:hidden;border-radius:8px;"></div>
         </div>
         <div class="plot-container">
             <div id="plot-14" style="width:100%;height:700px;"></div>
@@ -333,11 +335,12 @@
     </div>
 
     <div id="tab15" class="tab-content">
-        <div class="help"><strong>Average Age by Region:</strong> Interactive galactic region map and bar chart showing
-            the average age of neutron stars in each region. Click regions on the map for details.
+        <div class="help"><strong>Stellar Age by Region:</strong> Interactive galactic region map and bar chart showing
+            the average age of ALL stars in each region (not just neutron stars). Data loaded from pre-calculated
+            region_ages.json.
         </div>
         <div class="plot-container">
-            <div id="region-map-svg" style="width:100%;overflow:hidden;border-radius:8px;"></div>
+            <div id="region-map-svg-stellar" style="width:100%;overflow:hidden;border-radius:8px;"></div>
         </div>
         <div class="plot-container">
             <div id="plot-15" style="width:100%;height:700px;"></div>
@@ -1105,9 +1108,9 @@
                 if (index === 12) {
                     loadMassRadiusByAgeGroups(index);
                 } else if (index === 14) {
-                    loadAgeByRegion(index);
-                } else if (index === 15) {
                     loadAverageAgeByRegion(index);
+                } else if (index === 15) {
+                    loadStellarAgeByRegion(index);
                 } else if (index === 16) {
                     loadHistograms(index);
                 } else {
@@ -1401,167 +1404,9 @@
             }
         }
 
-        async function loadAgeByRegion(tabIndex) {
+        async function loadAverageAgeByRegion(tabIndex) {
             const loadingDiv = document.getElementById('loading-14');
             const plotDiv = document.getElementById('plot-14');
-            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
-
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            try {
-                // Get initial data
-                const data = await loadCSVStreaming();
-                if (!data) {
-                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
-                    return;
-                }
-
-                // Wait for CSV to completely load
-                while (!csvComplete) {
-                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                }
-
-                loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + csvData.length.toLocaleString() + ' data points by region and age...';
-
-                // Process ALL data at once
-                const processedData = await processWithWorker(csvData, null);
-
-                console.log('[Age by Region] Creating stacked bar chart with ' + processedData.length + ' total points');
-
-                // Define age groups (youngest to oldest)
-                const ageGroups = [
-                    { name: '< 10 Myr (Very Young)', min: 0, max: 10, color: '#1f77b4' },
-                    { name: '10-100 Myr (Young)', min: 10, max: 100, color: '#ff7f0e' },
-                    { name: '100-1000 Myr', min: 100, max: 1000, color: '#2ca02c' },
-                    { name: '1-10 Gyr', min: 1000, max: 10000, color: '#d62728' },
-                    { name: '> 10 Gyr (Very Old)', min: 10000, max: Infinity, color: '#9467bd' }
-                ];
-
-                // Build region ID to name mapping (already loaded)
-                const regions = [];
-                for (let i = 0; i < 42; i++) {
-                    if (regionMap[i]) {
-                        regions.push({ id: i, name: regionMap[i] });
-                    }
-                }
-
-                // Count stars by region and age group
-                const counts = {};
-                regions.forEach(region => {
-                    counts[region.id] = {};
-                    ageGroups.forEach(group => {
-                        counts[region.id][group.name] = 0;
-                    });
-                });
-
-                // Count data points
-                processedData.forEach(row => {
-                    if (!row.region || row.age === null || row.age === undefined) return;
-
-                    // Find region ID from region name
-                    const regionEntry = regions.find(r => r.name === row.region);
-                    if (!regionEntry) return;
-
-                    // Find age group
-                    const ageGroup = ageGroups.find(g => row.age >= g.min && row.age < g.max);
-                    if (!ageGroup) return;
-
-                    counts[regionEntry.id][ageGroup.name]++;
-                });
-
-                // Create traces for each age group (stacked)
-                const traces = [];
-
-                // First calculate totals per region for percentage calculation
-                const regionTotals = {};
-                regions.forEach(region => {
-                    regionTotals[region.id] = 0;
-                    ageGroups.forEach(group => {
-                        regionTotals[region.id] += counts[region.id][group.name] || 0;
-                    });
-                });
-
-                ageGroups.forEach(group => {
-                    const xData = [];
-                    const yData = [];
-                    const textData = [];
-
-                    regions.forEach(region => {
-                        const count = counts[region.id][group.name] || 0;
-                        const total = regionTotals[region.id];
-                        const percentage = total > 0 ? (count / total * 100) : 0;
-
-                        xData.push(region.name);
-                        yData.push(percentage);
-                        textData.push(count.toLocaleString() + ' stars (' + percentage.toFixed(1) + '%)');
-                    });
-
-                    traces.push({
-                        x: xData,
-                        y: yData,
-                        name: group.name,
-                        type: 'bar',
-                        marker: { color: group.color },
-                        text: textData,
-                        hovertemplate: '%{x}<br>%{fullData.name}<br>%{text}<extra></extra>'
-                    });
-                });
-
-                const layout = {
-                    title: 'Neutron Star Age Distribution by Galactic Region',
-                    barmode: 'stack',
-                    xaxis: {
-                        title: 'Galactic Region',
-                        tickangle: -45,
-                        automargin: true
-                    },
-                    yaxis: {
-                        title: 'Percentage (%)',
-                        gridcolor: '#333',
-                        range: [0, 100]
-                    },
-                    paper_bgcolor: '#1a1a1a',
-                    plot_bgcolor: '#1a1a1a',
-                    font: { color: '#fff' },
-                    autosize: true,
-                    height: 700,
-                    margin: { l: 80, r: 80, t: 80, b: 150 },
-                    showlegend: true,
-                    legend: {
-                        x: 1.02,
-                        y: 1,
-                        xanchor: 'left',
-                        bgcolor: 'rgba(45, 45, 45, 0.9)',
-                        bordercolor: '#555',
-                        borderwidth: 1
-                    }
-                };
-
-                plotDiv.style.display = 'none';
-                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
-                await new Promise(resolve => requestAnimationFrame(resolve));
-
-                await Plotly.newPlot(plotDiv, traces, layout, {
-                    responsive: true,
-                    displayModeBar: true
-                });
-
-                plotDiv.style.display = 'block';
-                Plotly.Plots.resize(plotDiv);
-
-                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded age distribution across ' + regions.length + ' regions with ' + processedData.length.toLocaleString() + ' neutron stars</div>';
-                loadedTabs.add(tabIndex);
-
-            } catch (error) {
-                console.error('[Age by Region] Error:', error);
-                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
-            }
-        }
-
-        async function loadAverageAgeByRegion(tabIndex) {
-            const loadingDiv = document.getElementById('loading-15');
-            const plotDiv = document.getElementById('plot-15');
             loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
 
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -1585,7 +1430,7 @@
                 // Process ALL data at once
                 const processedData = await processWithWorker(csvData, null);
 
-                console.log('[Average Age by Region] Creating bar chart with ' + processedData.length + ' total points');
+                console.log('[Neutron Age by Region] Creating bar chart with ' + processedData.length + ' total points');
 
                 // Build region ID to name mapping
                 const regions = [];
@@ -1767,15 +1612,15 @@
                                     alert(`${region.name}\\nAverage Age: ${avgAge.toFixed(1)} Myr\\nStars: ${stats.count.toLocaleString()}`);
                                 });
                             } else {
-                                console.warn('[Average Age by Region] Could not find SVG element for region', region.id, region.name);
+                                console.warn('[Neutron Age by Region] Could not find SVG element for region', region.id, region.name);
                             }
                         });
                     } else {
-                        console.error('[Average Age by Region] No SVG element found in loaded content');
+                        console.error('[Neutron Age by Region] No SVG element found in loaded content');
                         svgContainer.innerHTML = '<div style="color: #888; padding: 20px;">SVG map loaded but no SVG element found</div>';
                     }
                 } catch (svgError) {
-                    console.error('[Average Age by Region] Error loading SVG:', svgError);
+                    console.error('[Neutron Age by Region] Error loading SVG:', svgError);
                     svgContainer.innerHTML = '<div style="color: #f44336; padding: 20px;">Could not load region map: ' + svgError.message + '</div>';
                 }
 
@@ -1795,7 +1640,210 @@
                 loadedTabs.add(tabIndex);
 
             } catch (error) {
-                console.error('[Average Age by Region] Error:', error);
+                console.error('[Neutron Age by Region] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadStellarAgeByRegion(tabIndex) {
+            const loadingDiv = document.getElementById('loading-' + tabIndex);
+            const plotDiv = document.getElementById('plot-' + tabIndex);
+            loadingDiv.innerHTML = '<div class="spinner"></div>Loading region age data...';
+
+            try {
+                // Load region map for proper region names
+                await loadRegionMap();
+
+                // Load region_ages.json
+                const response = await fetch('region_ages.json');
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText + ' - Could not load region_ages.json');
+                }
+                const regionAgesData = await response.json();
+
+                console.log('[Stellar Age by Region] Loaded region_ages.json with ' + Object.keys(regionAgesData.regions).length + ' regions');
+
+                // Extract data for plotting, using regionMap for proper names
+                const regions = regionAgesData.regions;
+                const xData = [];
+                const yData = [];
+                const textData = [];
+
+                for (const regionId in regions) {
+                    const region = regions[regionId];
+                    const regionName = regionMap[region.id] || region.name || ('Region ' + region.id);
+                    xData.push(regionName);
+                    yData.push(region.average_age_myr);
+                    textData.push(region.average_age_myr.toFixed(1) + ' Myr (' + region.stars_with_age.toLocaleString() + ' stars)');
+                }
+
+                // Get color scale range
+                const minAge = Math.min(...yData.filter(v => v > 0));
+                const maxAge = Math.max(...yData);
+
+                // Create Viridis-colored bars
+                const trace = {
+                    x: xData,
+                    y: yData,
+                    type: 'bar',
+                    marker: {
+                        color: yData,
+                        colorscale: 'Viridis',
+                        showscale: true,
+                        colorbar: {
+                            title: 'Avg Age (Myr)',
+                            titlefont: { color: '#fff' },
+                            tickfont: { color: '#fff' }
+                        }
+                    },
+                    text: textData,
+                    hovertemplate: '%{x}<br>Average Age: %{text}<extra></extra>'
+                };
+
+                const layout = {
+                    title: 'Average Stellar Age by Galactic Region (All Stars)',
+                    xaxis: {
+                        title: 'Galactic Region',
+                        tickangle: -45,
+                        automargin: true,
+                        gridcolor: '#333'
+                    },
+                    yaxis: {
+                        title: 'Average Age (Myr)',
+                        gridcolor: '#333'
+                    },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    autosize: true,
+                    height: 700,
+                    margin: { l: 80, r: 80, t: 80, b: 150 },
+                    showlegend: false
+                };
+
+                // Load and color the SVG map
+                loadingDiv.innerHTML = '<div class="spinner"></div>Loading region map...';
+                const svgContainer = document.getElementById('region-map-svg-stellar');
+
+                try {
+                    const svgResponse = await fetch('EliteDangerousRegionMap/RegionMap.svg');
+                    if (!svgResponse.ok) {
+                        throw new Error('HTTP ' + svgResponse.status + ': ' + svgResponse.statusText);
+                    }
+                    const svgText = await svgResponse.text();
+                    svgContainer.innerHTML = svgText;
+
+                    const svg = svgContainer.querySelector('svg');
+                    if (svg) {
+                        svg.removeAttribute('width');
+                        svg.removeAttribute('height');
+                        svg.style.width = '100%';
+                        svg.style.height = 'auto';
+                        svg.style.maxHeight = '800px';
+                        svg.style.display = 'block';
+                        svg.style.borderRadius = '8px';
+
+                        // Override CSS for regions
+                        const styleElement = svg.querySelector('style');
+                        if (styleElement) {
+                            styleElement.textContent += `
+                                .region {
+                                    fill-opacity: 1 !important;
+                                }
+                                .region:hover {
+                                    fill-opacity: 1 !important;
+                                }
+                            `;
+                        }
+
+                        function getViridisColor(value, min, max) {
+                            const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+                            if (t < 0.25) {
+                                const tt = t / 0.25;
+                                const r = Math.floor(255 * (0.267004 + tt * (0.282623 - 0.267004)));
+                                const g = Math.floor(255 * (0.004874 + tt * (0.140926 - 0.004874)));
+                                const b = Math.floor(255 * (0.329415 + tt * (0.457517 - 0.329415)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            } else if (t < 0.5) {
+                                const tt = (t - 0.25) / 0.25;
+                                const r = Math.floor(255 * (0.282623 + tt * (0.163625 - 0.282623)));
+                                const g = Math.floor(255 * (0.140926 + tt * (0.471133 - 0.140926)));
+                                const b = Math.floor(255 * (0.457517 + tt * (0.558148 - 0.457517)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            } else if (t < 0.75) {
+                                const tt = (t - 0.5) / 0.25;
+                                const r = Math.floor(255 * (0.163625 + tt * (0.477504 - 0.163625)));
+                                const g = Math.floor(255 * (0.471133 + tt * (0.687197 - 0.471133)));
+                                const b = Math.floor(255 * (0.558148 + tt * (0.349303 - 0.558148)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            } else {
+                                const tt = (t - 0.75) / 0.25;
+                                const r = Math.floor(255 * (0.477504 + tt * (0.993248 - 0.477504)));
+                                const g = Math.floor(255 * (0.687197 + tt * (0.906157 - 0.687197)));
+                                const b = Math.floor(255 * (0.349303 + tt * (0.143936 - 0.349303)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            }
+                        }
+
+                        // Color each region
+                        for (const regionId in regions) {
+                            const region = regions[regionId];
+                            const regionName = regionMap[region.id] || region.name || ('Region ' + region.id);
+                            const avgAge = region.average_age_myr;
+                            const paddedId = region.id.toString().padStart(2, '0');
+                            const svgId = `Region_${paddedId}`;
+                            const regionElement = svg.querySelector(`[id="${svgId}"]`);
+
+                            if (regionElement) {
+                                const color = region.stars_with_age > 0 ? getViridisColor(avgAge, minAge, maxAge) : '#000000';
+                                regionElement.style.fill = color;
+                                regionElement.style.fillOpacity = '1';
+                                regionElement.style.stroke = '#ffffff';
+                                regionElement.style.strokeWidth = '1';
+                                regionElement.style.cursor = 'pointer';
+
+                                // Remove existing title if any
+                                const existingTitle = regionElement.querySelector('title');
+                                if (existingTitle) {
+                                    existingTitle.remove();
+                                }
+
+                                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                                title.textContent = `${regionName}: ${avgAge.toFixed(1)} Myr (${region.stars_with_age.toLocaleString()} stars)`;
+                                regionElement.appendChild(title);
+
+                                regionElement.addEventListener('click', () => {
+                                    alert(`${regionName}\\nAverage Age: ${avgAge.toFixed(1)} Myr\\nTotal Stars: ${region.total_stars.toLocaleString()}\\nStars with Age Data: ${region.stars_with_age.toLocaleString()}`);
+                                });
+                            }
+                        }
+                    } else {
+                        console.error('[Stellar Age by Region] No SVG element found in loaded content');
+                        svgContainer.innerHTML = '<div style="color: #888; padding: 20px;">SVG map loaded but no SVG element found</div>';
+                    }
+                } catch (svgError) {
+                    console.error('[Stellar Age by Region] Error loading SVG:', svgError);
+                    svgContainer.innerHTML = '<div style="color: #f44336; padding: 20px;">Could not load region map: ' + svgError.message + '</div>';
+                }
+
+                // Render the bar chart
+                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
+                await new Promise(resolve => requestAnimationFrame(resolve));
+
+                await Plotly.newPlot(plotDiv, [trace], layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+
+                plotDiv.style.display = 'block';
+                Plotly.Plots.resize(plotDiv);
+
+                const totalStars = regionAgesData.metadata.total_stars_with_age || 0;
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded from region_ages.json: ' + Object.keys(regions).length + ' regions, ' + totalStars.toLocaleString() + ' total stars</div>';
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Stellar Age by Region] Error:', error);
                 loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
             }
         }
