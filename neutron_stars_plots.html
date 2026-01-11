@@ -371,6 +371,9 @@
             <div class="plot-container">
                 <div id="hist-spin" style="width:100%;height:400px;"></div>
             </div>
+            <div class="plot-container">
+                <div id="hist-magnitude" style="width:100%;height:400px;"></div>
+            </div>
         </div>
         <div class="loading" id="loading-16"></div>
     </div>
@@ -1832,6 +1835,7 @@
                 const massValues = processedData.map(r => r.mass).filter(v => v !== null && v !== undefined);
                 const tempValues = processedData.map(r => r.temperature).filter(v => v !== null && v !== undefined);
                 const velocityValues = processedData.map(r => r.tangentialVelocity).filter(v => v !== null && v !== undefined);
+                const magnitudeValues = processedData.map(r => r.absoluteMagnitude).filter(v => v !== null && v !== undefined);
 
                 console.log('[Histograms] Value counts - radius: ' + radiusValues.length + ', period: ' + periodValues.length + ', age: ' + ageValues.length);
 
@@ -2022,6 +2026,27 @@
                     console.log('[Histograms] Spin histogram created');
                 } catch (e) {
                     console.error('[Histograms] Error creating spin histogram:', e);
+                }
+
+                try {
+                    await Plotly.newPlot('hist-magnitude', [{
+                        x: magnitudeValues,
+                        type: 'histogram',
+                        nbinsx: 100,
+                        marker: { color: '#74c0fc' },
+                        name: 'Absolute Magnitude'
+                    }], {
+                        title: 'Absolute Magnitude Distribution',
+                        xaxis: { title: 'Absolute Magnitude', gridcolor: '#333' },
+                        yaxis: { title: 'Count (log scale)', type: 'log', gridcolor: '#333' },
+                        paper_bgcolor: '#1a1a1a',
+                        plot_bgcolor: '#1a1a1a',
+                        font: { color: '#fff' },
+                        height: 380
+                    }, { responsive: true });
+                    console.log('[Histograms] Absolute Magnitude histogram created');
+                } catch (e) {
+                    console.error('[Histograms] Error creating magnitude histogram:', e);
                 }
 
                 console.log('[Histograms] All histograms created with ' + processedData.length + ' total points');
