@@ -182,7 +182,10 @@
         <button class="tab" onclick="showTab(10)">Temperature vs Compactness</button>
         <button class="tab" onclick="showTab(11)">Rotational Period vs Compactness</button>
         <button class="tab" onclick="showTab(12)">Mass-Radius by Age Groups</button>
-        <button class="tab" onclick="showTab(13)">Histograms</button>
+        <button class="tab" onclick="showTab(13)">Tangential Velocity vs Compactness</button>
+        <button class="tab" onclick="showTab(14)">Age by Region</button>
+        <button class="tab" onclick="showTab(15)">Average Age by Region</button>
+        <button class="tab" onclick="showTab(16)">Histograms</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -297,7 +300,9 @@
     </div>
 
     <div id="tab12" class="tab-content">
-        <div class="help"><strong>Age Groups:</strong> Mass vs Radius with different age groups shown as separate traces. This clearly reveals how younger neutron stars follow a different mass-radius relationship than older ones.
+        <div class="help"><strong>Age Groups:</strong> Mass vs Radius with different age groups shown as separate
+            traces. This clearly reveals how younger neutron stars follow a different mass-radius relationship than
+            older ones.
         </div>
         <div class="plot-container">
             <div id="plot-12" style="width:100%;height:700px;"></div>
@@ -306,6 +311,41 @@
     </div>
 
     <div id="tab13" class="tab-content">
+        <div class="help"><strong>Tangential Velocity vs Compactness:</strong> Shows how tangential velocity (surface
+            rotation speed) relates to compactness (mass-to-radius ratio). Color-coded by spin state: green=spin-up
+            (recycled pulsars), red=spin-down (magnetic braking), orange=unknown. Click legend to toggle traces.
+        </div>
+        <div class="plot-container">
+            <div id="plot-13" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-13"></div>
+        </div>
+    </div>
+
+    <div id="tab14" class="tab-content">
+        <div class="help"><strong>Age by Region:</strong> Stacked bar chart showing the distribution of neutron star
+            ages across galactic regions. Each bar represents a region with age groups stacked from youngest (bottom) to
+            oldest (top).
+        </div>
+        <div class="plot-container">
+            <div id="plot-14" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-14"></div>
+        </div>
+    </div>
+
+    <div id="tab15" class="tab-content">
+        <div class="help"><strong>Average Age by Region:</strong> Interactive galactic region map and bar chart showing
+            the average age of neutron stars in each region. Click regions on the map for details.
+        </div>
+        <div class="plot-container">
+            <div id="region-map-svg" style="width:100%;overflow:hidden;border-radius:8px;"></div>
+        </div>
+        <div class="plot-container">
+            <div id="plot-15" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-15"></div>
+        </div>
+    </div>
+
+    <div id="tab16" class="tab-content">
         <div class="help"><strong>Distributions:</strong> Histograms showing the distribution of various neutron star
             parameters.
         </div>
@@ -332,17 +372,19 @@
                 <div id="hist-spin" style="width:100%;height:400px;"></div>
             </div>
         </div>
-        <div class="loading" id="loading-13"></div>
+        <div class="loading" id="loading-16"></div>
     </div>
 
     <script>
-        const CSV_PATH = 'neutron_stars_plots_cache.csv.gz';
+        const REGION_MAP_PATH = 'EliteDangerousRegionMap/RegionMapData.json';
         const INITIAL_CHUNK_SIZE = 50000;
         const CHUNK_SIZE = 100000;
         const BATCH_INTERVAL = 500; // Update every 500ms for more visible progress
         const UPDATE_BATCH_SIZE = 50000; // Optimized: Larger batches = fewer updates
 
         let dataWorker = null;
+        let regionMapData = null;
+        let regionMap = {}; // id -> name mapping
 
         const plots = [
             { x: 'solarRadius', y: 'rotationalPeriod', color: 'age', title: 'Radius vs Rotational Period (color=age)', xlabel: 'Radius (km)', ylabel: 'Rotational Period', colorbar: 'Age', colorscale: 'viridis' },
@@ -356,7 +398,8 @@
             { x: 'age', y: 'mass', color: 'temperature', title: 'Mass vs Age (color=temperature)', xlabel: 'Age (Myr)', ylabel: 'Mass (M☉)', colorbar: 'Temperature (K)', colorscale: 'viridis' },
             { x: 'mass', y: 'tangentialVelocity', color: 'age', title: 'Tangential Velocity vs Mass (color=age)', xlabel: 'Mass (M☉)', ylabel: 'Tangential Velocity (km/s)', colorbar: 'Age (Myr)', colorscale: 'viridis', reference_line: 299792 },
             { x: 'compactness', y: 'temperature', color: 'age', title: 'Temperature vs Compactness (color=age)', xlabel: 'Compactness (GM/Rc²)', ylabel: 'Surface Temperature (K)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
-            { x: 'compactness', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Compactness (color=age)', xlabel: 'Compactness (GM/Rc²)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' }
+            { x: 'compactness', y: 'rotationalPeriod', color: 'age', title: 'Rotational Period vs Compactness (color=age)', xlabel: 'Compactness (GM/Rc²)', ylabel: 'Rotational Period (days)', colorbar: 'Age (Myr)', colorscale: 'viridis' },
+            { x: 'tangentialVelocity', y: 'compactness', color: 'spin', title: 'Tangential Velocity vs Compactness (color=spin)', xlabel: 'Tangential Velocity (km/s)', ylabel: 'Compactness (GM/Rc²)', colorbar: 'Spin State', colorscale: 'viridis', spinTraces: true, reference_line: 299792 }
         ];
 
         let csvData = [];
@@ -779,7 +822,24 @@
             const SPEED_OF_LIGHT = 299792;
             sampled.forEach(row => {
                 const radiusKm = row.solarRadius;
-                let hoverParts = [`<b>${row.system}</b>`];
+                let hoverParts = [];
+
+                // Show body name (or system if body not available)
+                if (row.body) {
+                    hoverParts.push(`<b>${row.body}</b>`);
+                } else if (row.system) {
+                    hoverParts.push(`<b>${row.system}</b>`);
+                }
+
+                // Show region if available
+                if (row.region) {
+                    hoverParts.push(`Region: ${row.region}`);
+                }
+
+                // Show system name if we showed body name
+                if (row.body && row.system) {
+                    hoverParts.push(`System: ${row.system}`);
+                }
 
                 if (row.solarRadius !== undefined && row.solarRadius !== null) {
                     hoverParts.push(`Radius: ${radiusKm.toLocaleString(undefined, { maximumFractionDigits: 0 })} km`);
@@ -876,10 +936,40 @@
         let csvLoading = false;
         let csvLoadPromise = null;
 
+        // Load region map data
+        async function loadRegionMap() {
+            if (regionMapData) return regionMapData;
+
+            try {
+                const response = await fetch(REGION_MAP_PATH);
+                regionMapData = await response.json();
+
+                // The regions array is indexed by region ID
+                if (regionMapData.regions && Array.isArray(regionMapData.regions)) {
+                    console.log('[RegionMap] Regions array length:', regionMapData.regions.length);
+                    for (let i = 0; i < regionMapData.regions.length; i++) {
+                        const region = regionMapData.regions[i];
+                        if (region) {
+                            regionMap[i] = region;
+                            console.log('[RegionMap] Index', i, '=', region);
+                        } else {
+                            console.log('[RegionMap] Index', i, '= (null or no name)');
+                        }
+                    }
+                }
+
+                console.log('[RegionMap] Loaded ' + Object.keys(regionMap).length + ' region names');
+                return regionMapData;
+            } catch (error) {
+                console.error('[RegionMap] Error loading:', error);
+                return null;
+            }
+        }
+
         async function loadCSVStreaming(onProgress) {
             // If already complete, return immediately
             if (csvComplete && csvData.length > 0) {
-                if (onProgress) onProgress(csvData.length, true);
+                if (onProgress) onProgress(csvData.length, true, null);
                 return csvData;
             }
 
@@ -894,62 +984,98 @@
 
             // Start new load
             csvLoading = true;
-            console.log('[CSV] Loading from ' + CSV_PATH);
+
+            // Load region map first
+            await loadRegionMap();
+
+            console.log('[CSV] Loading region files...');
 
             csvLoadPromise = (async () => {
-                const response = await fetch(CSV_PATH);
-                const reader = response.body.pipeThrough(new DecompressionStream('gzip')).getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let headersParsed = false;
-
                 try {
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) {
-                            console.log('[CSV] Stream complete');
-                            csvComplete = true;
-                            csvLoading = false;
-                            if (onProgress) onProgress(csvData.length, true);
-                            progressCallbacks.forEach(cb => cb(csvData.length, true));
-                            progressCallbacks = [];
-                            break;
-                        }
+                    let filesLoaded = 0;
+                    let filesSkipped = 0;
 
-                        buffer += decoder.decode(value, { stream: true });
+                    // Load each region file (regions 1-42)
+                    for (let regionId = 1; regionId <= 42; regionId++) {
+                        const regionName = regionMap[regionId] || 'Region ' + regionId;
+                        const paddedId = regionId.toString().padStart(2, '0');
+                        const filePath = 'Region_' + paddedId + '.csv.gz';
 
-                        const lines = buffer.split('\n');
-                        buffer = lines[lines.length - 1];
+                        console.log('[CSV] Region ID', regionId, '-> Name:', regionName, '(from regionMap[' + regionId + '])');
+                        console.log('[CSV] Attempting to load ' + filePath + ' (' + regionName + ')');
+                        if (onProgress) onProgress(csvData.length, false, regionName);
+                        progressCallbacks.forEach(cb => cb(csvData.length, false, regionName));
 
-                        for (let i = 0; i < lines.length - 1; i++) {
-                            const line = lines[i].trim();
-                            if (!line) continue;
+                        try {
+                            const rowsBefore = csvData.length;
+                            const response = await fetch(filePath);
+                            if (!response.ok) {
+                                console.warn('[CSV] File not found (HTTP ' + response.status + '): ' + filePath);
+                                filesSkipped++;
+                                continue;
+                            }
 
-                            if (!headersParsed) {
-                                csvHeaders = line.split(',').map(h => h.trim().replace(/\r/g, ''));
-                                headersParsed = true;
-                                console.log('[CSV] Headers:', csvHeaders);
-                            } else {
-                                const row = parseCSVLine(line, csvHeaders);
-                                csvData.push(row);
+                            const reader = response.body.pipeThrough(new DecompressionStream('gzip')).getReader();
+                            const decoder = new TextDecoder();
+                            let buffer = '';
+                            let headersParsed = false;
+                            let fileHeaders = null;
 
-                                if (csvData.length % 100000 === 0) {
-                                    console.log('[CSV] Received ' + csvData.length.toLocaleString() + ' rows');
-                                    if (onProgress) onProgress(csvData.length, false);
-                                    progressCallbacks.forEach(cb => cb(csvData.length, false));
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+
+                                buffer += decoder.decode(value, { stream: true });
+
+                                const lines = buffer.split('\n');
+                                buffer = lines[lines.length - 1];
+
+                                for (let i = 0; i < lines.length - 1; i++) {
+                                    const line = lines[i].trim();
+                                    if (!line) continue;
+
+                                    if (!headersParsed) {
+                                        fileHeaders = line.split(',').map(h => h.trim().replace(/\r/g, ''));
+                                        headersParsed = true;
+
+                                        // Use first file's headers as the global headers
+                                        if (!csvHeaders) {
+                                            csvHeaders = fileHeaders;
+                                            console.log('[CSV] Headers:', csvHeaders);
+                                        }
+                                    } else {
+                                        const row = parseCSVLine(line, fileHeaders);
+                                        row.region = regionName; // Add region name to each row
+                                        csvData.push(row);
+                                    }
                                 }
                             }
+
+                            if (buffer.trim() && headersParsed) {
+                                const row = parseCSVLine(buffer.trim(), fileHeaders);
+                                row.region = regionName; // Add region name to each row
+                                csvData.push(row);
+                            }
+
+                            const rowsAdded = csvData.length - rowsBefore;
+                            console.log('[CSV] ' + regionName + ': added ' + rowsAdded.toLocaleString() + ' rows (total: ' + csvData.length.toLocaleString() + ')');
+                            filesLoaded++;
+
+                        } catch (fileError) {
+                            console.error('[CSV] Error loading ' + filePath + ':', fileError);
+                            filesSkipped++;
                         }
                     }
 
-                    if (buffer.trim() && headersParsed) {
-                        const row = parseCSVLine(buffer.trim(), csvHeaders);
-                        csvData.push(row);
-                    }
+                    console.log('[CSV] Complete! Loaded ' + filesLoaded + ' files, skipped ' + filesSkipped + ' files. Total rows: ' + csvData.length.toLocaleString());
+                    csvComplete = true;
+                    csvLoading = false;
+                    if (onProgress) onProgress(csvData.length, true, null);
+                    progressCallbacks.forEach(cb => cb(csvData.length, true, null));
+                    progressCallbacks = [];
 
-                    console.log('[CSV] Complete! Total rows: ' + csvData.length.toLocaleString());
                 } catch (error) {
-                    console.error('[CSV] Streaming error:', error);
+                    console.error('[CSV] Loading error:', error);
                     csvLoading = false;
                 }
 
@@ -975,7 +1101,11 @@
                 console.log('[Tab ' + index + '] Loading plot...');
                 if (index === 12) {
                     loadMassRadiusByAgeGroups(index);
-                } else if (index === 13) {
+                } else if (index === 14) {
+                    loadAgeByRegion(index);
+                } else if (index === 15) {
+                    loadAverageAgeByRegion(index);
+                } else if (index === 16) {
                     loadHistograms(index);
                 } else {
                     loadAndStreamData(index);
@@ -1021,7 +1151,7 @@
                 console.log('[Mass-Radius Age Groups] Creating plot with ' + processedData.length + ' total points');
 
                 // Filter to valid mass and radius data
-                const validData = processedData.filter(r => 
+                const validData = processedData.filter(r =>
                     r.mass !== null && r.mass !== undefined && !isNaN(r.mass) &&
                     r.solarRadius !== null && r.solarRadius !== undefined && !isNaN(r.solarRadius) &&
                     r.age !== null && r.age !== undefined && !isNaN(r.age)
@@ -1043,14 +1173,14 @@
                 const traces = [];
                 for (const group of ageGroups) {
                     const groupData = validData.filter(r => r.age >= group.min && r.age < group.max);
-                    
+
                     if (groupData.length === 0) {
                         console.log('[Mass-Radius Age Groups] No data for group: ' + group.name);
                         continue;
                     }
 
                     // Downsample large groups for performance
-                    const sampledData = groupData.length > 50000 
+                    const sampledData = groupData.length > 50000
                         ? downsampleForDisplay(groupData, 'mass', 'solarRadius', 'age', 400)
                         : groupData;
 
@@ -1065,7 +1195,7 @@
                     for (const r of sampledData) {
                         massData.push(r.mass);
                         radiusData.push(r.solarRadius);
-                        
+
                         // Create hover text
                         const radiusKm = r.solarRadius;
                         let hoverParts = [`<b>${r.system}</b>`];
@@ -1130,13 +1260,13 @@
 
                 const layout = {
                     title: 'Mass vs Radius by Age Groups - Reveals Evolution Curves',
-                    xaxis: { 
-                        title: 'Mass (M☉)', 
+                    xaxis: {
+                        title: 'Mass (M☉)',
                         type: 'linear',
                         gridcolor: '#333'
                     },
-                    yaxis: { 
-                        title: 'Radius (km)', 
+                    yaxis: {
+                        title: 'Radius (km)',
                         type: 'linear',
                         gridcolor: '#333'
                     },
@@ -1264,6 +1394,405 @@
 
             } catch (error) {
                 console.error('[Mass-Radius Age Groups] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadAgeByRegion(tabIndex) {
+            const loadingDiv = document.getElementById('loading-14');
+            const plotDiv = document.getElementById('plot-14');
+            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                // Get initial data
+                const data = await loadCSVStreaming();
+                if (!data) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
+                    return;
+                }
+
+                // Wait for CSV to completely load
+                while (!csvComplete) {
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+
+                loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + csvData.length.toLocaleString() + ' data points by region and age...';
+
+                // Process ALL data at once
+                const processedData = await processWithWorker(csvData, null);
+
+                console.log('[Age by Region] Creating stacked bar chart with ' + processedData.length + ' total points');
+
+                // Define age groups (youngest to oldest)
+                const ageGroups = [
+                    { name: '< 10 Myr (Very Young)', min: 0, max: 10, color: '#1f77b4' },
+                    { name: '10-100 Myr (Young)', min: 10, max: 100, color: '#ff7f0e' },
+                    { name: '100-1000 Myr', min: 100, max: 1000, color: '#2ca02c' },
+                    { name: '1-10 Gyr', min: 1000, max: 10000, color: '#d62728' },
+                    { name: '> 10 Gyr (Very Old)', min: 10000, max: Infinity, color: '#9467bd' }
+                ];
+
+                // Build region ID to name mapping (already loaded)
+                const regions = [];
+                for (let i = 0; i < 42; i++) {
+                    if (regionMap[i]) {
+                        regions.push({ id: i, name: regionMap[i] });
+                    }
+                }
+
+                // Count stars by region and age group
+                const counts = {};
+                regions.forEach(region => {
+                    counts[region.id] = {};
+                    ageGroups.forEach(group => {
+                        counts[region.id][group.name] = 0;
+                    });
+                });
+
+                // Count data points
+                processedData.forEach(row => {
+                    if (!row.region || row.age === null || row.age === undefined) return;
+
+                    // Find region ID from region name
+                    const regionEntry = regions.find(r => r.name === row.region);
+                    if (!regionEntry) return;
+
+                    // Find age group
+                    const ageGroup = ageGroups.find(g => row.age >= g.min && row.age < g.max);
+                    if (!ageGroup) return;
+
+                    counts[regionEntry.id][ageGroup.name]++;
+                });
+
+                // Create traces for each age group (stacked)
+                const traces = [];
+
+                // First calculate totals per region for percentage calculation
+                const regionTotals = {};
+                regions.forEach(region => {
+                    regionTotals[region.id] = 0;
+                    ageGroups.forEach(group => {
+                        regionTotals[region.id] += counts[region.id][group.name] || 0;
+                    });
+                });
+
+                ageGroups.forEach(group => {
+                    const xData = [];
+                    const yData = [];
+                    const textData = [];
+
+                    regions.forEach(region => {
+                        const count = counts[region.id][group.name] || 0;
+                        const total = regionTotals[region.id];
+                        const percentage = total > 0 ? (count / total * 100) : 0;
+
+                        xData.push(region.name);
+                        yData.push(percentage);
+                        textData.push(count.toLocaleString() + ' stars (' + percentage.toFixed(1) + '%)');
+                    });
+
+                    traces.push({
+                        x: xData,
+                        y: yData,
+                        name: group.name,
+                        type: 'bar',
+                        marker: { color: group.color },
+                        text: textData,
+                        hovertemplate: '%{x}<br>%{fullData.name}<br>%{text}<extra></extra>'
+                    });
+                });
+
+                const layout = {
+                    title: 'Neutron Star Age Distribution by Galactic Region',
+                    barmode: 'stack',
+                    xaxis: {
+                        title: 'Galactic Region',
+                        tickangle: -45,
+                        automargin: true
+                    },
+                    yaxis: {
+                        title: 'Percentage (%)',
+                        gridcolor: '#333',
+                        range: [0, 100]
+                    },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    autosize: true,
+                    height: 700,
+                    margin: { l: 80, r: 80, t: 80, b: 150 },
+                    showlegend: true,
+                    legend: {
+                        x: 1.02,
+                        y: 1,
+                        xanchor: 'left',
+                        bgcolor: 'rgba(45, 45, 45, 0.9)',
+                        bordercolor: '#555',
+                        borderwidth: 1
+                    }
+                };
+
+                plotDiv.style.display = 'none';
+                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
+                await new Promise(resolve => requestAnimationFrame(resolve));
+
+                await Plotly.newPlot(plotDiv, traces, layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+
+                plotDiv.style.display = 'block';
+                Plotly.Plots.resize(plotDiv);
+
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded age distribution across ' + regions.length + ' regions with ' + processedData.length.toLocaleString() + ' neutron stars</div>';
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Age by Region] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+            }
+        }
+
+        async function loadAverageAgeByRegion(tabIndex) {
+            const loadingDiv = document.getElementById('loading-15');
+            const plotDiv = document.getElementById('plot-15');
+            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                // Get initial data
+                const data = await loadCSVStreaming();
+                if (!data) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
+                    return;
+                }
+
+                // Wait for CSV to completely load
+                while (!csvComplete) {
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+
+                loadingDiv.innerHTML = '<div class="spinner"></div>Calculating average ages by region...';
+
+                // Process ALL data at once
+                const processedData = await processWithWorker(csvData, null);
+
+                console.log('[Average Age by Region] Creating bar chart with ' + processedData.length + ' total points');
+
+                // Build region ID to name mapping
+                const regions = [];
+                for (let i = 1; i <= 42; i++) {
+                    if (regionMap[i]) {
+                        regions.push({ id: i, name: regionMap[i] });
+                    }
+                }
+
+                // Calculate average age per region
+                const regionStats = {};
+                regions.forEach(region => {
+                    regionStats[region.id] = { sum: 0, count: 0 };
+                });
+
+                // Sum ages and count stars per region
+                processedData.forEach(row => {
+                    if (!row.region || row.age === null || row.age === undefined) return;
+
+                    // Find region ID from region name
+                    const regionEntry = regions.find(r => r.name === row.region);
+                    if (!regionEntry) return;
+
+                    regionStats[regionEntry.id].sum += row.age;
+                    regionStats[regionEntry.id].count++;
+                });
+
+                // Calculate averages
+                const xData = [];
+                const yData = [];
+                const textData = [];
+
+                regions.forEach(region => {
+                    const stats = regionStats[region.id];
+                    const avgAge = stats.count > 0 ? stats.sum / stats.count : 0;
+
+                    xData.push(region.name);
+                    yData.push(avgAge);
+                    textData.push(avgAge.toFixed(1) + ' Myr (' + stats.count.toLocaleString() + ' stars)');
+                });
+
+                const trace = {
+                    x: xData,
+                    y: yData,
+                    type: 'bar',
+                    marker: {
+                        color: yData,
+                        colorscale: 'Viridis',
+                        showscale: true,
+                        colorbar: {
+                            title: 'Avg Age (Myr)',
+                            titlefont: { color: '#fff' },
+                            tickfont: { color: '#fff' }
+                        }
+                    },
+                    text: textData,
+                    hovertemplate: '%{x}<br>Average Age: %{text}<extra></extra>'
+                };
+
+                const layout = {
+                    title: 'Average Neutron Star Age by Galactic Region',
+                    xaxis: {
+                        title: 'Galactic Region',
+                        tickangle: -45,
+                        automargin: true,
+                        gridcolor: '#333'
+                    },
+                    yaxis: {
+                        title: 'Average Age (Myr)',
+                        gridcolor: '#333'
+                    },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    autosize: true,
+                    height: 700,
+                    margin: { l: 80, r: 80, t: 80, b: 150 },
+                    showlegend: false
+                };
+
+                // Load and color the SVG map
+                loadingDiv.innerHTML = '<div class="spinner"></div>Loading region map...';
+                const svgContainer = document.getElementById('region-map-svg');
+
+                try {
+                    const svgResponse = await fetch('EliteDangerousRegionMap/RegionMap.svg');
+                    if (!svgResponse.ok) {
+                        throw new Error('HTTP ' + svgResponse.status + ': ' + svgResponse.statusText);
+                    }
+                    const svgText = await svgResponse.text();
+                    svgContainer.innerHTML = svgText;
+
+                    // Get the SVG element
+                    const svg = svgContainer.querySelector('svg');
+                    if (svg) {
+                        svg.removeAttribute('width');
+                        svg.removeAttribute('height');
+                        svg.style.width = '100%';
+                        svg.style.height = 'auto';
+                        svg.style.maxHeight = '800px';
+                        svg.style.display = 'block';
+                        svg.style.borderRadius = '8px';
+
+                        // Override the CSS styles for regions to remove default coloring
+                        const styleElement = svg.querySelector('style');
+                        if (styleElement) {
+                            styleElement.textContent += `
+                                .region {
+                                    fill-opacity: 1 !important;
+                                }
+                                .region:hover {
+                                    fill-opacity: 1 !important;
+                                }
+                            `;
+                        }
+
+                        // Calculate color scale using Viridis
+                        const minAge = Math.min(...yData.filter(v => v > 0));
+                        const maxAge = Math.max(...yData);
+
+                        // Viridis color scale function (simplified)
+                        function getViridisColor(value, min, max) {
+                            const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+                            // Proper Viridis color scale (dark purple -> blue -> green -> yellow)
+                            // Sample key points from the actual Viridis colormap
+                            if (t < 0.25) {
+                                const tt = t / 0.25;
+                                const r = Math.floor(255 * (0.267004 + tt * (0.282623 - 0.267004)));
+                                const g = Math.floor(255 * (0.004874 + tt * (0.140926 - 0.004874)));
+                                const b = Math.floor(255 * (0.329415 + tt * (0.457517 - 0.329415)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            } else if (t < 0.5) {
+                                const tt = (t - 0.25) / 0.25;
+                                const r = Math.floor(255 * (0.282623 + tt * (0.163625 - 0.282623)));
+                                const g = Math.floor(255 * (0.140926 + tt * (0.471133 - 0.140926)));
+                                const b = Math.floor(255 * (0.457517 + tt * (0.558148 - 0.457517)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            } else if (t < 0.75) {
+                                const tt = (t - 0.5) / 0.25;
+                                const r = Math.floor(255 * (0.163625 + tt * (0.477504 - 0.163625)));
+                                const g = Math.floor(255 * (0.471133 + tt * (0.687197 - 0.471133)));
+                                const b = Math.floor(255 * (0.558148 + tt * (0.349303 - 0.558148)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            } else {
+                                const tt = (t - 0.75) / 0.25;
+                                const r = Math.floor(255 * (0.477504 + tt * (0.993248 - 0.477504)));
+                                const g = Math.floor(255 * (0.687197 + tt * (0.906157 - 0.687197)));
+                                const b = Math.floor(255 * (0.349303 + tt * (0.143936 - 0.349303)));
+                                return `rgb(${r}, ${g}, ${b})`;
+                            }
+                        }
+
+                        // Color each region
+                        regions.forEach(region => {
+                            const stats = regionStats[region.id];
+                            const avgAge = stats.count > 0 ? stats.sum / stats.count : 0;
+
+                            // The SVG uses "Region_01", "Region_02" format (underscore with zero-padding)
+                            const paddedId = region.id.toString().padStart(2, '0');
+                            const svgId = `Region_${paddedId}`;
+
+                            const regionElement = svg.querySelector(`[id="${svgId}"]`);
+
+                            if (regionElement) {
+                                const color = stats.count > 0 ? getViridisColor(avgAge, minAge, maxAge) : '#000000';
+                                regionElement.style.fill = color;
+                                regionElement.style.fillOpacity = '1';
+                                regionElement.style.stroke = '#ffffff';
+                                regionElement.style.strokeWidth = '1';
+                                regionElement.style.cursor = 'pointer';
+
+                                // Add tooltip
+                                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                                title.textContent = `${region.name}: ${avgAge.toFixed(1)} Myr (${stats.count.toLocaleString()} stars)`;
+                                regionElement.appendChild(title);
+
+                                // Add click handler
+                                regionElement.addEventListener('click', () => {
+                                    alert(`${region.name}\\nAverage Age: ${avgAge.toFixed(1)} Myr\\nStars: ${stats.count.toLocaleString()}`);
+                                });
+                            } else {
+                                console.warn('[Average Age by Region] Could not find SVG element for region', region.id, region.name);
+                            }
+                        });
+                    } else {
+                        console.error('[Average Age by Region] No SVG element found in loaded content');
+                        svgContainer.innerHTML = '<div style="color: #888; padding: 20px;">SVG map loaded but no SVG element found</div>';
+                    }
+                } catch (svgError) {
+                    console.error('[Average Age by Region] Error loading SVG:', svgError);
+                    svgContainer.innerHTML = '<div style="color: #f44336; padding: 20px;">Could not load region map: ' + svgError.message + '</div>';
+                }
+
+                plotDiv.style.display = 'none';
+                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
+                await new Promise(resolve => requestAnimationFrame(resolve));
+
+                await Plotly.newPlot(plotDiv, [trace], layout, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+
+                plotDiv.style.display = 'block';
+                Plotly.Plots.resize(plotDiv);
+
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded average ages for ' + regions.length + ' regions with ' + processedData.length.toLocaleString() + ' neutron stars</div>';
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Average Age by Region] Error:', error);
                 loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
             }
         }
@@ -1508,19 +2037,34 @@
         async function loadAndStreamData(tabIndex) {
             const loadingDiv = document.getElementById('loading-' + tabIndex);
             const plotDiv = document.getElementById('plot-' + tabIndex);
-            const plotConfig = plots[tabIndex];
+            // Tab 12 is Mass-Radius by Age (special), so tab 13+ needs to map to plots array correctly
+            const plotsIndex = tabIndex > 12 ? tabIndex - 1 : tabIndex;
+            const plotConfig = plots[plotsIndex];
             const startTime = performance.now();
 
             console.log('[Plot ' + tabIndex + '] Starting load for: ' + plotConfig.title);
 
+            if (!loadingDiv) {
+                console.error('[Plot ' + tabIndex + '] Loading div not found: loading-' + tabIndex);
+                return;
+            }
+            if (!plotDiv) {
+                console.error('[Plot ' + tabIndex + '] Plot div not found: plot-' + tabIndex);
+                return;
+            }
+
             // Hide plot div and show loading in its place
             plotDiv.style.display = 'none';
             loadingDiv.innerHTML = '<div class="spinner"></div>Loading data: 0 rows...';
+            loadingDiv.style.display = 'block';
+            console.log('[Plot ' + tabIndex + '] Loading div shown');
 
             try {
-                const progressCallback = (count, complete) => {
+                const progressCallback = (count, complete, regionName) => {
                     if (complete) {
                         loadingDiv.innerHTML = '<div class="spinner"></div>Loaded ' + count.toLocaleString() + ' rows, rendering chart...';
+                    } else if (regionName) {
+                        loadingDiv.innerHTML = '<div class="spinner"></div>Loading ' + regionName + ': ' + count.toLocaleString() + ' rows...';
                     } else {
                         loadingDiv.innerHTML = '<div class="spinner"></div>Loading data: ' + count.toLocaleString() + ' rows...';
                     }
@@ -1563,7 +2107,7 @@
                 });
 
                 console.log('[Plot ' + tabIndex + '] Filtered to ' + validData.length.toLocaleString() + ' valid points for ' + xField + ' vs ' + yField);
-                
+
                 // If this is a large dataset, warn about performance and consider downsampling
                 if (validData.length > 1000000) {
                     console.warn('[Plot ' + tabIndex + '] Large dataset: ' + validData.length.toLocaleString() + ' points - performance optimization active');
@@ -1587,7 +2131,7 @@
                 // Apply smart downsampling for better performance
                 let plotData;
                 let allDataForZoom = null; // Store full dataset for dynamic zoom resampling
-                
+
                 // Downsample if dataset is very large (>2M points) or has compactness field
                 if (validData.length > 2000000 || xField === 'compactness' || yField === 'compactness') {
                     console.log('[Plot ' + tabIndex + '] Applying smart downsampling (' + (xField === 'compactness' || yField === 'compactness' ? 'compactness plot' : 'large dataset') + ')');
@@ -1632,22 +2176,28 @@
                 let traces = [];
                 if (plotConfig.spinTraces) {
                     console.log('[Plot ' + tabIndex + '] Creating separate traces for spin states');
-                    
+
+                    // Update loading message for spin trace processing
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + plotData.length.toLocaleString() + ' points for spin traces...';
+
+                    // Allow UI to update before heavy processing
+                    await new Promise(resolve => setTimeout(resolve, 50));
+
                     const spinStates = [
                         { name: 'Spin Up', value: 'up', color: '#00ff00' },
                         { name: 'Spin Down', value: 'down', color: '#ff3333' },
                         { name: 'No Spin', value: 'none', color: '#ffaa00' }
                     ];
-                    
+
                     for (const spinState of spinStates) {
                         const spinData = plotData.filter(r => r.spin === spinState.value);
                         if (spinData.length === 0) continue;
-                        
+
                         const spinXData = spinData.map(r => r[xField]);
                         const spinYData = spinData.map(r => r[yField]);
                         const spinTextData = spinData.map(r => r.hoverText);
                         const spinSystemData = spinData.map(r => r.system);
-                        
+
                         traces.push({
                             x: spinXData,
                             y: spinYData,
@@ -1666,6 +2216,10 @@
                             showlegend: true
                         });
                     }
+
+                    // Update loading message before plotting
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart with ' + traces.length + ' traces...';
+                    await new Promise(resolve => setTimeout(resolve, 10));
                 } else {
                     const trace = {
                         x: xData,
@@ -1785,16 +2339,33 @@
                 // Add reference lines and annotations
                 if (plotConfig.reference_line) {
                     if (!layout.shapes) layout.shapes = [];
-                    layout.shapes.push({
-                        type: 'line',
-                        x0: 0,
-                        x1: 1,
-                        xref: 'paper',
-                        y0: plotConfig.reference_line,
-                        y1: plotConfig.reference_line,
-                        yref: 'y',
-                        line: { color: '#00ff00', width: 2, dash: 'dash' }
-                    });
+
+                    // Check if tangential velocity is on x-axis (vertical line) or y-axis (horizontal line)
+                    if (plotConfig.x === 'tangentialVelocity') {
+                        // Vertical line for speed of light on x-axis
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: plotConfig.reference_line,
+                            x1: plotConfig.reference_line,
+                            xref: 'x',
+                            y0: 0,
+                            y1: 1,
+                            yref: 'paper',
+                            line: { color: '#00ff00', width: 2, dash: 'dash' }
+                        });
+                    } else {
+                        // Horizontal line for speed of light on y-axis
+                        layout.shapes.push({
+                            type: 'line',
+                            x0: 0,
+                            x1: 1,
+                            xref: 'paper',
+                            y0: plotConfig.reference_line,
+                            y1: plotConfig.reference_line,
+                            yref: 'y',
+                            line: { color: '#00ff00', width: 2, dash: 'dash' }
+                        });
+                    }
                 }
 
                 // Add physics constraint lines for Mass vs Radius plot (plot index 5)
@@ -2130,7 +2701,7 @@
                 if (allDataForZoom && !plotConfig.spinTraces) {
                     let zoomTimeout = null;
                     let loadingOverlay = null;
-                    
+
                     // Store original data for reset functionality
                     const originalData = {
                         x: [...xData],
@@ -2139,19 +2710,19 @@
                         text: [...textData],
                         customdata: [...systemData]
                     };
-                    
-                    plotDiv.on('plotly_relayout', function(eventData) {
+
+                    plotDiv.on('plotly_relayout', function (eventData) {
                         console.log('[Plot ' + tabIndex + '] Relayout event:', eventData);
-                        
+
                         // Check if this is a reset/autoscale event
                         if (eventData['xaxis.autorange'] || eventData['yaxis.autorange']) {
                             console.log('[Plot ' + tabIndex + '] Reset axes detected, restoring original data...');
-                            
+
                             // Clear any pending zoom operation
                             if (zoomTimeout) {
                                 clearTimeout(zoomTimeout);
                             }
-                            
+
                             // Restore original downsampled data
                             Plotly.restyle(plotDiv, {
                                 x: [originalData.x],
@@ -2160,19 +2731,19 @@
                                 text: [originalData.text],
                                 customdata: [originalData.customdata]
                             }, 0);
-                            
+
                             console.log('[Plot ' + tabIndex + '] Original data restored (' + originalData.x.length.toLocaleString() + ' points)');
                             return;
                         }
-                        
+
                         // Check if this is a zoom event (has xaxis.range or yaxis.range)
                         if (!eventData['xaxis.range[0]'] && !eventData['xaxis.range']) return;
-                        
+
                         // Clear any pending zoom operation
                         if (zoomTimeout) {
                             clearTimeout(zoomTimeout);
                         }
-                        
+
                         // Show loading overlay
                         if (!loadingOverlay) {
                             loadingOverlay = document.createElement('div');
@@ -2182,11 +2753,11 @@
                             plotDiv.parentElement.appendChild(loadingOverlay);
                         }
                         loadingOverlay.style.display = 'flex';
-                        
+
                         // Debounce zoom handling to avoid excessive computation
-                        zoomTimeout = setTimeout(async function() {
+                        zoomTimeout = setTimeout(async function () {
                             console.log('[Plot ' + tabIndex + '] Zoom detected, resampling data for current view...');
-                            
+
                             // Get current axis ranges - handle both possible formats
                             let xRange, yRange;
                             if (eventData['xaxis.range[0]'] !== undefined) {
@@ -2194,54 +2765,54 @@
                             } else if (eventData['xaxis.range']) {
                                 xRange = eventData['xaxis.range'];
                             }
-                            
+
                             if (eventData['yaxis.range[0]'] !== undefined) {
                                 yRange = [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']];
                             } else if (eventData['yaxis.range']) {
                                 yRange = eventData['yaxis.range'];
                             }
-                            
+
                             if (!xRange || !yRange) {
                                 console.log('[Plot ' + tabIndex + '] Missing axis ranges, skipping resample');
                                 loadingOverlay.style.display = 'none';
                                 return;
                             }
-                            
+
                             console.log('[Plot ' + tabIndex + '] X range:', xRange, 'Y range:', yRange);
-                            
+
                             // Handle log scale axes - Plotly returns ranges in log space for log axes
                             // Need to convert back to linear space for data filtering
                             const useLogX = xType === 'log';
                             const useLogY = yType === 'log';
-                            
+
                             const xMin = useLogX ? Math.pow(10, xRange[0]) : xRange[0];
                             const xMax = useLogX ? Math.pow(10, xRange[1]) : xRange[1];
                             const yMin = useLogY ? Math.pow(10, yRange[0]) : yRange[0];
                             const yMax = useLogY ? Math.pow(10, yRange[1]) : yRange[1];
-                            
+
                             console.log('[Plot ' + tabIndex + '] Linear ranges - X:', xMin, 'to', xMax, ', Y:', yMin, 'to', yMax);
-                            
+
                             // Filter data to visible range
                             const visibleData = allDataForZoom.filter(r => {
                                 const xVal = r[xField];
                                 const yVal = r[yField];
                                 return xVal >= xMin && xVal <= xMax &&
-                                       yVal >= yMin && yVal <= yMax;
+                                    yVal >= yMin && yVal <= yMax;
                             });
-                            
+
                             console.log('[Plot ' + tabIndex + '] Visible data: ' + visibleData.length.toLocaleString() + ' points in view');
-                            
+
                             // Resample visible data with finer grid when zoomed in
                             const resampledData = downsampleForDisplay(visibleData, xField, yField, colorField, 1000);
                             console.log('[Plot ' + tabIndex + '] Resampled to ' + resampledData.length.toLocaleString() + ' points for zoomed view');
-                            
+
                             // Build new data arrays
                             const newXData = resampledData.map(r => r[xField]);
                             const newYData = resampledData.map(r => r[yField]);
                             const newColorData = resampledData.map(r => r[colorField]);
                             const newTextData = resampledData.map(r => r.hoverText);
                             const newSystemData = resampledData.map(r => r.system);
-                            
+
                             // Update the plot with new data - include customdata for click handler
                             await Plotly.restyle(plotDiv, {
                                 x: [newXData],
@@ -2250,7 +2821,7 @@
                                 text: [newTextData],
                                 customdata: [newSystemData]
                             }, 0);
-                            
+
                             // Hide loading overlay
                             loadingOverlay.style.display = 'none';
                         }, 500); // Wait 500ms after last zoom event before processing
