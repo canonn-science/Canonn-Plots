@@ -337,10 +337,24 @@
     <div id="tab15" class="tab-content">
         <div class="help"><strong>Stellar Age by Region:</strong> Interactive galactic region map and bar chart showing
             the average age of ALL stars in each region (not just neutron stars). Data loaded from pre-calculated
-            region_ages.json.
+            region_ages.json. Select/deselect star types to customize the average.
         </div>
-        <div class="plot-container">
-            <div id="region-map-svg-stellar" style="width:100%;overflow:hidden;border-radius:8px;"></div>
+        <div style="display: flex; gap: 20px;">
+            <div class="plot-container" style="flex: 1;">
+                <div id="region-map-svg-stellar" style="width:100%;overflow:hidden;border-radius:8px;"></div>
+            </div>
+            <div class="plot-container" style="width: 300px; max-height: 600px; overflow-y: auto;">
+                <h3 style="margin: 0 0 10px 0; font-size: 16px;">Star Type Filter</h3>
+                <div style="font-size: 11px; color: #888; margin-bottom: 10px;">
+                    <button id="select-all-subtypes"
+                        style="background: #4a9eff; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px; margin-right: 5px;">Select
+                        All</button>
+                    <button id="deselect-all-subtypes"
+                        style="background: #666; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 4px;">Deselect
+                        All</button>
+                </div>
+                <div id="subtype-checkboxes" style="font-size: 12px; line-height: 1.8;"></div>
+            </div>
         </div>
         <div class="plot-container">
             <div id="plot-15" style="width:100%;height:700px;"></div>
@@ -1407,30 +1421,24 @@
         async function loadAverageAgeByRegion(tabIndex) {
             const loadingDiv = document.getElementById('loading-14');
             const plotDiv = document.getElementById('plot-14');
-            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
+            loadingDiv.innerHTML = '<div class="spinner"></div>Loading neutron star data from region_ages.json...';
 
             await new Promise(resolve => setTimeout(resolve, 100));
 
             try {
-                // Get initial data
-                const data = await loadCSVStreaming();
-                if (!data) {
-                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
-                    return;
+                // Load region map for proper region names
+                await loadRegionMap();
+
+                // Load region_ages.json
+                const response = await fetch('region_ages.json');
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status + ': ' + response.statusText + ' - Could not load region_ages.json');
                 }
+                const regionAgesData = await response.json();
 
-                // Wait for CSV to completely load
-                while (!csvComplete) {
-                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                }
+                console.log('[Neutron Age by Region] Loaded region_ages.json with ' + Object.keys(regionAgesData.regions).length + ' regions');
 
-                loadingDiv.innerHTML = '<div class="spinner"></div>Calculating average ages by region...';
-
-                // Process ALL data at once
-                const processedData = await processWithWorker(csvData, null);
-
-                console.log('[Neutron Age by Region] Creating bar chart with ' + processedData.length + ' total points');
+                loadingDiv.innerHTML = '<div class="spinner"></div>Calculating neutron star average ages by region...';
 
                 // Build region ID to name mapping
                 const regions = [];
@@ -1440,23 +1448,23 @@
                     }
                 }
 
-                // Calculate average age per region
+                // Extract neutron star data from by_subtype
                 const regionStats = {};
                 regions.forEach(region => {
                     regionStats[region.id] = { sum: 0, count: 0 };
                 });
 
-                // Sum ages and count stars per region
-                processedData.forEach(row => {
-                    if (!row.region || row.age === null || row.age === undefined) return;
-
-                    // Find region ID from region name
-                    const regionEntry = regions.find(r => r.name === row.region);
-                    if (!regionEntry) return;
-
-                    regionStats[regionEntry.id].sum += row.age;
-                    regionStats[regionEntry.id].count++;
-                });
+                // Calculate average age per region using Neutron Star subtype data
+                for (const regionId in regionAgesData.regions) {
+                    const region = regionAgesData.regions[regionId];
+                    if (region.by_subtype && region.by_subtype['Neutron Star']) {
+                        const neutronData = region.by_subtype['Neutron Star'];
+                        regionStats[region.id] = {
+                            sum: neutronData.sum_age_myr,
+                            count: neutronData.stars_with_age
+                        };
+                    }
+                }
 
                 // Calculate averages
                 const xData = [];
@@ -1636,7 +1644,8 @@
                 plotDiv.style.display = 'block';
                 Plotly.Plots.resize(plotDiv);
 
-                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded average ages for ' + regions.length + ' regions with ' + processedData.length.toLocaleString() + ' neutron stars</div>';
+                const totalNeutronStars = Object.values(regionStats).reduce((sum, stats) => sum + stats.count, 0);
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded neutron star data from region_ages.json: ' + regions.length + ' regions with ' + totalNeutronStars.toLocaleString() + ' neutron stars</div>';
                 loadedTabs.add(tabIndex);
 
             } catch (error) {
@@ -1644,6 +1653,10 @@
                 loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
             }
         }
+
+        // Global state for stellar age region data
+        let stellarRegionData = null;
+        let selectedSubtypes = new Set();
 
         async function loadStellarAgeByRegion(tabIndex) {
             const loadingDiv = document.getElementById('loading-' + tabIndex);
@@ -1659,27 +1672,115 @@
                 if (!response.ok) {
                     throw new Error('HTTP ' + response.status + ': ' + response.statusText + ' - Could not load region_ages.json');
                 }
-                const regionAgesData = await response.json();
+                stellarRegionData = await response.json();
 
-                console.log('[Stellar Age by Region] Loaded region_ages.json with ' + Object.keys(regionAgesData.regions).length + ' regions');
+                console.log('[Stellar Age by Region] Loaded region_ages.json with ' + Object.keys(stellarRegionData.regions).length + ' regions');
 
-                // Extract data for plotting, using regionMap for proper names
-                const regions = regionAgesData.regions;
+                // Get all unique subtypes from metadata, excluding "Unknown"
+                const allSubtypes = (stellarRegionData.metadata.star_subtypes || []).filter(subtype => subtype !== 'Unknown');
+
+                // Initialize all subtypes as selected
+                selectedSubtypes = new Set(allSubtypes);
+
+                // Create checkbox UI
+                const checkboxContainer = document.getElementById('subtype-checkboxes');
+                checkboxContainer.innerHTML = '';
+
+                allSubtypes.forEach(subtype => {
+                    const label = document.createElement('label');
+                    label.style.display = 'block';
+                    label.style.cursor = 'pointer';
+                    label.style.userSelect = 'none';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = true;
+                    checkbox.value = subtype;
+                    checkbox.style.marginRight = '8px';
+                    checkbox.addEventListener('change', () => {
+                        if (checkbox.checked) {
+                            selectedSubtypes.add(subtype);
+                        } else {
+                            selectedSubtypes.delete(subtype);
+                        }
+                        updateStellarAgeVisualization();
+                    });
+
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(subtype));
+                    checkboxContainer.appendChild(label);
+                });
+
+                // Add select all / deselect all handlers
+                document.getElementById('select-all-subtypes').addEventListener('click', () => {
+                    selectedSubtypes = new Set(allSubtypes);
+                    checkboxContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+                    updateStellarAgeVisualization();
+                });
+
+                document.getElementById('deselect-all-subtypes').addEventListener('click', () => {
+                    selectedSubtypes.clear();
+                    checkboxContainer.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                    updateStellarAgeVisualization();
+                });
+
+                // Initial render
+                await updateStellarAgeVisualization();
+
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Stellar Age by Region] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+            }
+        }
+
+        async function updateStellarAgeVisualization() {
+            const loadingDiv = document.getElementById('loading-15');
+            const plotDiv = document.getElementById('plot-15');
+
+            if (!stellarRegionData) return;
+
+            loadingDiv.innerHTML = '<div class="spinner"></div>Calculating averages for selected star types...';
+
+            try {
+                const regions = stellarRegionData.regions;
                 const xData = [];
                 const yData = [];
                 const textData = [];
 
+                // Calculate weighted average for each region based on selected subtypes
                 for (const regionId in regions) {
                     const region = regions[regionId];
                     const regionName = regionMap[region.id] || region.name || ('Region ' + region.id);
+
+                    let totalSum = 0;
+                    let totalCount = 0;
+
+                    // Sum across selected subtypes
+                    if (region.by_subtype) {
+                        for (const subtype of selectedSubtypes) {
+                            if (region.by_subtype[subtype]) {
+                                totalSum += region.by_subtype[subtype].sum_age_myr;
+                                totalCount += region.by_subtype[subtype].stars_with_age;
+                            }
+                        }
+                    }
+
+                    const avgAge = totalCount > 0 ? totalSum / totalCount : 0;
+
                     xData.push(regionName);
-                    yData.push(region.average_age_myr);
-                    textData.push(region.average_age_myr.toFixed(1) + ' Myr (' + region.stars_with_age.toLocaleString() + ' stars)');
+                    yData.push(avgAge);
+                    textData.push(avgAge.toFixed(1) + ' Myr (' + totalCount.toLocaleString() + ' stars)');
                 }
 
-                // Get color scale range
-                const minAge = Math.min(...yData.filter(v => v > 0));
-                const maxAge = Math.max(...yData);
+                // Get color scale range - include 0 ages as valid
+                const minAge = yData.length > 0 ? Math.min(...yData) : 0;
+                const maxAge = yData.length > 0 ? Math.max(...yData) : 0;
+
+                // Ensure we have a valid range for color scaling
+                const colorMin = minAge;
+                const colorMax = maxAge > minAge ? maxAge : minAge + 1;
 
                 // Create Viridis-colored bars
                 const trace = {
@@ -1701,7 +1802,7 @@
                 };
 
                 const layout = {
-                    title: 'Average Stellar Age by Galactic Region (All Stars)',
+                    title: 'Average Stellar Age by Galactic Region (' + selectedSubtypes.size + ' types selected)',
                     xaxis: {
                         title: 'Galactic Region',
                         tickangle: -45,
@@ -1722,115 +1823,156 @@
                 };
 
                 // Load and color the SVG map
-                loadingDiv.innerHTML = '<div class="spinner"></div>Loading region map...';
                 const svgContainer = document.getElementById('region-map-svg-stellar');
 
-                try {
-                    const svgResponse = await fetch('EliteDangerousRegionMap/RegionMap.svg');
-                    if (!svgResponse.ok) {
-                        throw new Error('HTTP ' + svgResponse.status + ': ' + svgResponse.statusText);
-                    }
-                    const svgText = await svgResponse.text();
-                    svgContainer.innerHTML = svgText;
-
-                    const svg = svgContainer.querySelector('svg');
-                    if (svg) {
-                        svg.removeAttribute('width');
-                        svg.removeAttribute('height');
-                        svg.style.width = '100%';
-                        svg.style.height = 'auto';
-                        svg.style.maxHeight = '800px';
-                        svg.style.display = 'block';
-                        svg.style.borderRadius = '8px';
-
-                        // Override CSS for regions
-                        const styleElement = svg.querySelector('style');
-                        if (styleElement) {
-                            styleElement.textContent += `
-                                .region {
-                                    fill-opacity: 1 !important;
-                                }
-                                .region:hover {
-                                    fill-opacity: 1 !important;
-                                }
-                            `;
+                // Only load SVG if not already loaded
+                if (!svgContainer.querySelector('svg')) {
+                    try {
+                        const svgResponse = await fetch('EliteDangerousRegionMap/RegionMap.svg');
+                        if (!svgResponse.ok) {
+                            throw new Error('HTTP ' + svgResponse.status + ': ' + svgResponse.statusText);
                         }
+                        const svgText = await svgResponse.text();
+                        svgContainer.innerHTML = svgText;
 
-                        function getViridisColor(value, min, max) {
-                            const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
-                            if (t < 0.25) {
-                                const tt = t / 0.25;
-                                const r = Math.floor(255 * (0.267004 + tt * (0.282623 - 0.267004)));
-                                const g = Math.floor(255 * (0.004874 + tt * (0.140926 - 0.004874)));
-                                const b = Math.floor(255 * (0.329415 + tt * (0.457517 - 0.329415)));
-                                return `rgb(${r}, ${g}, ${b})`;
-                            } else if (t < 0.5) {
-                                const tt = (t - 0.25) / 0.25;
-                                const r = Math.floor(255 * (0.282623 + tt * (0.163625 - 0.282623)));
-                                const g = Math.floor(255 * (0.140926 + tt * (0.471133 - 0.140926)));
-                                const b = Math.floor(255 * (0.457517 + tt * (0.558148 - 0.457517)));
-                                return `rgb(${r}, ${g}, ${b})`;
-                            } else if (t < 0.75) {
-                                const tt = (t - 0.5) / 0.25;
-                                const r = Math.floor(255 * (0.163625 + tt * (0.477504 - 0.163625)));
-                                const g = Math.floor(255 * (0.471133 + tt * (0.687197 - 0.471133)));
-                                const b = Math.floor(255 * (0.558148 + tt * (0.349303 - 0.558148)));
-                                return `rgb(${r}, ${g}, ${b})`;
-                            } else {
-                                const tt = (t - 0.75) / 0.25;
-                                const r = Math.floor(255 * (0.477504 + tt * (0.993248 - 0.477504)));
-                                const g = Math.floor(255 * (0.687197 + tt * (0.906157 - 0.687197)));
-                                const b = Math.floor(255 * (0.349303 + tt * (0.143936 - 0.349303)));
-                                return `rgb(${r}, ${g}, ${b})`;
+                        const svg = svgContainer.querySelector('svg');
+                        if (svg) {
+                            svg.removeAttribute('width');
+                            svg.removeAttribute('height');
+                            svg.style.width = '100%';
+                            svg.style.height = 'auto';
+                            svg.style.maxHeight = '800px';
+                            svg.style.display = 'block';
+                            svg.style.borderRadius = '8px';
+
+                            // Override CSS for regions
+                            const styleElement = svg.querySelector('style');
+                            if (styleElement) {
+                                styleElement.textContent += `
+                                    .region {
+                                        fill-opacity: 1 !important;
+                                    }
+                                    .region:hover {
+                                        fill-opacity: 1 !important;
+                                    }
+                                `;
+                            }
+
+                            // Initialize all regions to black
+                            for (let i = 1; i <= 42; i++) {
+                                const paddedId = i.toString().padStart(2, '0');
+                                const svgId = `Region_${paddedId}`;
+                                const regionElement = svg.querySelector(`[id="${svgId}"]`);
+                                if (regionElement) {
+                                    regionElement.style.fill = '#000000';
+                                    regionElement.style.fillOpacity = '1';
+                                    regionElement.style.stroke = '#ffffff';
+                                    regionElement.style.strokeWidth = '1';
+                                }
+                            }
+                        }
+                    } catch (svgError) {
+                        console.error('[Stellar Age by Region] Error loading SVG:', svgError);
+                        svgContainer.innerHTML = '<div style="color: #f44336; padding: 20px;">Could not load region map: ' + svgError.message + '</div>';
+                    }
+                }
+
+                // Update SVG colors
+                const svg = svgContainer.querySelector('svg');
+                if (svg) {
+                    function getViridisColor(value, min, max) {
+                        const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+                        if (t < 0.25) {
+                            const tt = t / 0.25;
+                            const r = Math.floor(255 * (0.267004 + tt * (0.282623 - 0.267004)));
+                            const g = Math.floor(255 * (0.004874 + tt * (0.140926 - 0.004874)));
+                            const b = Math.floor(255 * (0.329415 + tt * (0.457517 - 0.329415)));
+                            return `rgb(${r}, ${g}, ${b})`;
+                        } else if (t < 0.5) {
+                            const tt = (t - 0.25) / 0.25;
+                            const r = Math.floor(255 * (0.282623 + tt * (0.163625 - 0.282623)));
+                            const g = Math.floor(255 * (0.140926 + tt * (0.471133 - 0.140926)));
+                            const b = Math.floor(255 * (0.457517 + tt * (0.558148 - 0.457517)));
+                            return `rgb(${r}, ${g}, ${b})`;
+                        } else if (t < 0.75) {
+                            const tt = (t - 0.5) / 0.25;
+                            const r = Math.floor(255 * (0.163625 + tt * (0.477504 - 0.163625)));
+                            const g = Math.floor(255 * (0.471133 + tt * (0.687197 - 0.471133)));
+                            const b = Math.floor(255 * (0.558148 + tt * (0.349303 - 0.558148)));
+                            return `rgb(${r}, ${g}, ${b})`;
+                        } else {
+                            const tt = (t - 0.75) / 0.25;
+                            const r = Math.floor(255 * (0.477504 + tt * (0.993248 - 0.477504)));
+                            const g = Math.floor(255 * (0.687197 + tt * (0.906157 - 0.687197)));
+                            const b = Math.floor(255 * (0.349303 + tt * (0.143936 - 0.349303)));
+                            return `rgb(${r}, ${g}, ${b})`;
+                        }
+                    }
+
+                    // Color each region progressively with flash animation
+                    const regionIds = Object.keys(regions);
+                    for (let i = 0; i < regionIds.length; i++) {
+                        const regionId = regionIds[i];
+                        const region = regions[regionId];
+                        const regionName = regionMap[region.id] || region.name || ('Region ' + region.id);
+
+                        // Recalculate for this specific region
+                        let totalSum = 0;
+                        let totalCount = 0;
+                        if (region.by_subtype) {
+                            for (const subtype of selectedSubtypes) {
+                                if (region.by_subtype[subtype]) {
+                                    totalSum += region.by_subtype[subtype].sum_age_myr;
+                                    totalCount += region.by_subtype[subtype].stars_with_age;
+                                }
                             }
                         }
 
-                        // Color each region
-                        for (const regionId in regions) {
-                            const region = regions[regionId];
-                            const regionName = regionMap[region.id] || region.name || ('Region ' + region.id);
-                            const avgAge = region.average_age_myr;
-                            const paddedId = region.id.toString().padStart(2, '0');
-                            const svgId = `Region_${paddedId}`;
-                            const regionElement = svg.querySelector(`[id="${svgId}"]`);
+                        const avgAge = totalCount > 0 ? totalSum / totalCount : 0;
 
-                            if (regionElement) {
-                                const color = region.stars_with_age > 0 ? getViridisColor(avgAge, minAge, maxAge) : '#000000';
-                                regionElement.style.fill = color;
-                                regionElement.style.fillOpacity = '1';
-                                regionElement.style.stroke = '#ffffff';
-                                regionElement.style.strokeWidth = '1';
-                                regionElement.style.cursor = 'pointer';
+                        const paddedId = region.id.toString().padStart(2, '0');
+                        const svgId = `Region_${paddedId}`;
+                        const regionElement = svg.querySelector(`[id="${svgId}"]`);
 
-                                // Remove existing title if any
-                                const existingTitle = regionElement.querySelector('title');
-                                if (existingTitle) {
-                                    existingTitle.remove();
-                                }
+                        if (regionElement) {
+                            // Flash animation: briefly show white
+                            regionElement.style.fill = '#ffffff';
+                            regionElement.style.transition = 'fill 0.05s';
 
-                                const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-                                title.textContent = `${regionName}: ${avgAge.toFixed(1)} Myr (${region.stars_with_age.toLocaleString()} stars)`;
-                                regionElement.appendChild(title);
+                            // Wait a moment then apply the actual color
+                            await new Promise(resolve => setTimeout(resolve, 5));
 
-                                regionElement.addEventListener('click', () => {
-                                    alert(`${regionName}\\nAverage Age: ${avgAge.toFixed(1)} Myr\\nTotal Stars: ${region.total_stars.toLocaleString()}\\nStars with Age Data: ${region.stars_with_age.toLocaleString()}`);
-                                });
+                            // Color region if it has any stars from selected types
+                            const color = totalCount > 0 ? getViridisColor(avgAge, colorMin, colorMax) : '#000000';
+                            regionElement.style.fill = color;
+                            regionElement.style.fillOpacity = '1';
+                            regionElement.style.stroke = '#ffffff';
+                            regionElement.style.strokeWidth = '1';
+                            regionElement.style.cursor = 'pointer';
+
+                            // Remove existing title and click handler
+                            const existingTitle = regionElement.querySelector('title');
+                            if (existingTitle) {
+                                existingTitle.remove();
                             }
+
+                            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                            title.textContent = `${regionName}: ${avgAge.toFixed(1)} Myr (${totalCount.toLocaleString()} stars from ${selectedSubtypes.size} types)`;
+                            regionElement.appendChild(title);
+
+                            // Remove old click handlers by cloning
+                            const newElement = regionElement.cloneNode(true);
+                            regionElement.parentNode.replaceChild(newElement, regionElement);
+
+                            newElement.addEventListener('click', () => {
+                                alert(`${regionName}\\nAverage Age: ${avgAge.toFixed(1)} Myr\\nStars from Selected Types: ${totalCount.toLocaleString()}\\nSelected Star Types: ${selectedSubtypes.size}`);
+                            });
                         }
-                    } else {
-                        console.error('[Stellar Age by Region] No SVG element found in loaded content');
-                        svgContainer.innerHTML = '<div style="color: #888; padding: 20px;">SVG map loaded but no SVG element found</div>';
                     }
-                } catch (svgError) {
-                    console.error('[Stellar Age by Region] Error loading SVG:', svgError);
-                    svgContainer.innerHTML = '<div style="color: #f44336; padding: 20px;">Could not load region map: ' + svgError.message + '</div>';
                 }
 
                 // Render the bar chart
-                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
-                await new Promise(resolve => requestAnimationFrame(resolve));
-
-                await Plotly.newPlot(plotDiv, [trace], layout, {
+                await Plotly.react(plotDiv, [trace], layout, {
                     responsive: true,
                     displayModeBar: true
                 });
@@ -1838,13 +1980,25 @@
                 plotDiv.style.display = 'block';
                 Plotly.Plots.resize(plotDiv);
 
-                const totalStars = regionAgesData.metadata.total_stars_with_age || 0;
-                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded from region_ages.json: ' + Object.keys(regions).length + ' regions, ' + totalStars.toLocaleString() + ' total stars</div>';
-                loadedTabs.add(tabIndex);
+                const totalStars = yData.reduce((sum, _, i) => {
+                    const regionId = Object.keys(regions)[i];
+                    const region = regions[regionId];
+                    let count = 0;
+                    if (region.by_subtype) {
+                        for (const subtype of selectedSubtypes) {
+                            if (region.by_subtype[subtype]) {
+                                count += region.by_subtype[subtype].stars_with_age;
+                            }
+                        }
+                    }
+                    return sum + count;
+                }, 0);
+
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Showing ' + selectedSubtypes.size + ' star types across ' + Object.keys(regions).length + ' regions (' + totalStars.toLocaleString() + ' stars)</div>';
 
             } catch (error) {
-                console.error('[Stellar Age by Region] Error:', error);
-                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+                console.error('[Stellar Age by Region] Update error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error updating visualization: ' + error.message + '</div>';
             }
         }
 
@@ -2259,7 +2413,7 @@
                     const spinStates = [
                         { name: 'Spin Up', value: 'up', color: '#00ff00' },
                         { name: 'Spin Down', value: 'down', color: '#ff3333' },
-                        { name: 'No Spin', value: 'none', color: '#ffaa00' }
+                        { name: 'Normal Spin', value: 'none', color: '#ffaa00' }
                     ];
 
                     for (const spinState of spinStates) {

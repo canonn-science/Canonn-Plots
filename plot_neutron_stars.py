@@ -53,7 +53,12 @@ def _clean_line_for_json(line):
 
 
 def extract_neutron_stars(
-    gz_path, systems_jsonl_path=None, max_points=None, progress_interval=200000
+    gz_path,
+    systems_jsonl_path=None,
+    max_points=None,
+    progress_interval=200000,
+    track_region_ages=False,
+    region_ages_path="region_ages.json",
 ):
     global shutdown_requested
     points = []
@@ -63,6 +68,20 @@ def extract_neutron_stars(
     malformed_lines = 0
     stars_found = 0
     start = time.time()
+
+    # Initialize region age tracking
+    region_stats = {}
+    if track_region_ages:
+        print(f"Region age tracking enabled, will save to: {region_ages_path}")
+        # Initialize all regions 1-42
+        for region_id in range(1, 43):
+            region_stats[region_id] = {
+                "id": region_id,
+                "total_stars": 0,
+                "stars_with_age": 0,
+                "sum_age_myr": 0.0,
+                "by_subtype": {},  # Will store {subType: {count, sum_age, stars_with_age}}
+            }
 
     # Open temp file for writing systems incrementally
     systems_file = None
@@ -113,6 +132,71 @@ def extract_neutron_stars(
 
                     system_has_neutron = False
                     bodies = sysobj.get("bodies") or []
+
+                    # Track ALL stars for region age statistics
+                    if (
+                        track_region_ages
+                        and sys_x is not None
+                        and sys_y is not None
+                        and sys_z is not None
+                    ):
+                        region_result = findRegion(sys_x, sys_y, sys_z)
+                        if region_result:
+                            region_id, _ = (
+                                region_result  # Unpack tuple (id, region_data)
+                            )
+                            if 1 <= region_id <= 42:
+                                for b in bodies:
+                                    body_type = b.get("type") or ""
+                                    if body_type == "Star":
+                                        sub_type = (
+                                            b.get("subType")
+                                            or b.get("subtype")
+                                            or "Unknown"
+                                        )
+
+                                        # Track overall stats
+                                        region_stats[region_id]["total_stars"] += 1
+                                        star_age = try_float(
+                                            get_first(
+                                                "age",
+                                                "age_Myr",
+                                                "age_million_years",
+                                                src=b,
+                                            )
+                                        )
+                                        if star_age is not None and not isnan(star_age):
+                                            region_stats[region_id][
+                                                "stars_with_age"
+                                            ] += 1
+                                            region_stats[region_id][
+                                                "sum_age_myr"
+                                            ] += star_age
+
+                                        # Track per subType
+                                        if (
+                                            sub_type
+                                            not in region_stats[region_id]["by_subtype"]
+                                        ):
+                                            region_stats[region_id]["by_subtype"][
+                                                sub_type
+                                            ] = {
+                                                "total_count": 0,
+                                                "stars_with_age": 0,
+                                                "sum_age_myr": 0.0,
+                                            }
+
+                                        region_stats[region_id]["by_subtype"][sub_type][
+                                            "total_count"
+                                        ] += 1
+                                        if star_age is not None and not isnan(star_age):
+                                            region_stats[region_id]["by_subtype"][
+                                                sub_type
+                                            ]["stars_with_age"] += 1
+                                            region_stats[region_id]["by_subtype"][
+                                                sub_type
+                                            ]["sum_age_myr"] += star_age
+
                     for b in bodies:
                         if (
                             b.get("subType") != "Neutron Star"
@@ -350,6 +434,89 @@ def extract_neutron_stars(
                     os.remove(systems_jsonl_path)
                 os.rename(systems_temp_path, systems_jsonl_path)
                 print(f"Saved {systems_written} systems to {systems_jsonl_path}")
+
+        # Save region age statistics
+        if track_region_ages:
+            print(f"Calculating region averages and saving to {region_ages_path}...")
+
+            # Load region names from RegionMap
+            region_map_path = os.path.join(
+                os.path.dirname(__file__),
+                "EliteDangerousRegionMap",
+                "RegionMapData.json",
+            )
+            region_names = {}
+            try:
+                with open(region_map_path, "r") as f:
+                    region_data = json.load(f)
+                    regions = region_data.get("regions", [])
+                    for i, region in enumerate(regions):
+                        if region and "name" in region:
+                            region_names[i] = region["name"]
+            except Exception as e:
+                print(f"Warning: Could not load region names: {e}")
+
+            # Collect all unique star subTypes across all regions
+            all_subtypes = set()
+            for region_id in range(1, 43):
+                all_subtypes.update(region_stats[region_id]["by_subtype"].keys())
+
+            # Build output structure
+            output = {
+                "metadata": {
+                    "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "total_systems_processed": systems_parsed,
+                    "regions_included": 42,
+                    "star_subtypes": sorted(list(all_subtypes)),
+                },
+                "regions": {},
+            }
+
+            total_stars_with_age = 0
+            for region_id in range(1, 43):
+                stats = region_stats[region_id]
+                avg_age = 0.0
+                if stats["stars_with_age"] > 0:
+                    avg_age = stats["sum_age_myr"] / stats["stars_with_age"]
+                    total_stars_with_age += stats["stars_with_age"]
+
+                # Build subtype data
+                subtypes_data = {}
+                for subtype, subtype_stats in stats["by_subtype"].items():
+                    avg_subtype_age = 0.0
+                    if subtype_stats["stars_with_age"] > 0:
+                        avg_subtype_age = (
+                            subtype_stats["sum_age_myr"]
+                            / subtype_stats["stars_with_age"]
+                        )
+
+                    subtypes_data[subtype] = {
+                        "total_count": subtype_stats["total_count"],
+                        "stars_with_age": subtype_stats["stars_with_age"],
+                        "sum_age_myr": round(subtype_stats["sum_age_myr"], 2),
+                        "average_age_myr": round(avg_subtype_age, 2),
+                    }
+
+                output["regions"][str(region_id)] = {
+                    "id": region_id,
+                    "name": region_names.get(region_id, f"Region {region_id}"),
+                    "total_stars": stats["total_stars"],
+                    "stars_with_age": stats["stars_with_age"],
+                    "sum_age_myr": stats["sum_age_myr"],
+                    "average_age_myr": round(avg_age, 2),
+                    "by_subtype": subtypes_data,
+                }
+
+            output["metadata"]["total_stars_with_age"] = total_stars_with_age
+
+            # Write to file
+            with open(region_ages_path, "w") as f:
+                json.dump(output, f, indent=2)
+
+            print(f"Saved region age statistics to {region_ages_path}")
+            print(f"Total stars with age data: {total_stars_with_age:,}")
+            print(f"Unique star subTypes found: {len(all_subtypes)}")
+            print(f"SubTypes: {', '.join(sorted(all_subtypes))}")
 
     return points
 
@@ -752,6 +919,16 @@ def main():
         action="store_true",
         help="force reload from galaxy file even if systems.jsonl exists",
     )
+    p.add_argument(
+        "--track-region-ages",
+        action="store_true",
+        help="track average age of all stars by region and save to region_ages.json",
+    )
+    p.add_argument(
+        "--region-ages-output",
+        default="region_ages.json",
+        help="output path for region ages JSON file",
+    )
 
     args = p.parse_args()
 
@@ -777,6 +954,8 @@ def main():
             max_points=(args.max if args.max > 0 else None),
             progress_interval=args.progress_interval,
             systems_jsonl_path=args.systems_jsonl,
+            track_region_ages=args.track_region_ages,
+            region_ages_path=args.region_ages_output,
         )
 
     if not pts:
