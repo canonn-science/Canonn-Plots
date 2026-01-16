@@ -515,117 +515,40 @@
             const workerCode = `
                 // Format hover text with proper units (inside worker for speed)
                 function formatHoverText(row) {
-                    const SPEED_OF_LIGHT = 299792; // km/s
-                    
-                    let hoverParts = ['<b>' + row.system + '</b>'];
-                    
-                    // Radius: show only in km (already converted)
-                    if (row.solarRadius !== undefined) {
-                        hoverParts.push('Radius: ' + row.solarRadius.toFixed(0) + ' km');
-                    }
-                    
-                    // Rotational Period: show in km/s or c
-                    if (row.rotationalPeriod !== undefined && row.tangentialVelocity !== undefined) {
-                        if (row.tangentialVelocity >= 0.1 * SPEED_OF_LIGHT) {
-                            const speedInC = row.tangentialVelocity / SPEED_OF_LIGHT;
-                            hoverParts.push('Rotational Velocity: ' + speedInC.toFixed(3) + 'c');
-                        } else {
-                            hoverParts.push('Rotational Velocity: ' + row.tangentialVelocity.toFixed(1) + ' km/s');
-                        }
-                        
-                        // Format rotational period with appropriate unit
-                        const periodDays = row.rotationalPeriod;
-                        const periodSeconds = periodDays * 86400;
-                        
-                        if (periodSeconds < 1) {
-                            hoverParts.push('Rotational Period: ' + (periodSeconds * 1000).toFixed(2) + ' ms');
-                        } else if (periodSeconds < 60) {
-                            hoverParts.push('Rotational Period: ' + periodSeconds.toFixed(3) + ' s');
-                        } else if (periodSeconds < 3600) {
-                            hoverParts.push('Rotational Period: ' + (periodSeconds / 60).toFixed(2) + ' min');
-                        } else if (periodDays < 1) {
-                            hoverParts.push('Rotational Period: ' + (periodSeconds / 3600).toFixed(2) + ' hr');
-                        } else if (periodDays < 365.25) {
-                            hoverParts.push('Rotational Period: ' + periodDays.toFixed(2) + ' days');
-                        } else if (periodDays < 36525) {
-                            const periodYears = periodDays / 365.25;
-                            hoverParts.push('Rotational Period: ' + periodYears.toFixed(2) + ' years');
-                        } else {
-                            const periodCenturies = periodDays / 36525;
-                            hoverParts.push('Rotational Period: ' + periodCenturies.toFixed(2) + ' centuries');
-                        }
-                    }
-                    
-                    // Age in millions of years
-                    if (row.age !== undefined) {
-                        const ageMyr = row.age;
-                        if (ageMyr >= 1000) {
-                            const ageGyr = ageMyr / 1000;
-                            hoverParts.push('Age: ' + ageGyr.toFixed(2) + ' Gyr');
-                        } else {
-                            hoverParts.push('Age: ' + ageMyr.toFixed(1) + ' Myr');
-                        }
-                    }
-                    
-                    // Temperature in Kelvin
-                    if (row.temperature !== undefined) {
-                        hoverParts.push('Temperature: ' + row.temperature.toFixed(0) + ' K');
-                    }
-                    
-                    // Mass in solar masses
-                    if (row.mass !== undefined) {
-                        hoverParts.push('Mass: ' + row.mass.toFixed(3) + ' M☉');
-                    }
-                    
-                    // Spin state
-                    if (row.spin !== undefined) {
-                        hoverParts.push('Spin: ' + row.spin);
-                    }
-                    
-                    return hoverParts.join('<br>');
+                    // ...existing code...
                 }
-            
                 self.onmessage = function(e) {
                     const { type, data, fields, id } = e.data;
-                    
                     if (type === 'process') {
-                        const processed = data.map(row => {
-                            const radiusKm = row.solarRadius * 696000;
-                            const periodSeconds = row.rotationalPeriod * 86400;
-                            const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
-                            
-                            // Calculate period derivative: P-dot = P / (2 * tau)
-                            // age is in Myr, convert to seconds: age * 1e6 * 365.25 * 86400
-                            const ageSeconds = row.age * 1e6 * 365.25 * 86400;
-                            const periodDerivative = periodSeconds / (2 * ageSeconds);
-                            
-                            // Calculate compactness: GM/(Rc²)
-                            // G = 6.67430e-11 m³ kg⁻¹ s⁻²
-                            // M_sun = 1.98847e30 kg
-                            // R_sun = 6.957e8 m
-                            // c = 2.99792458e8 m/s
-                            let compactness = null;
-                            if (row.mass !== null && row.mass !== undefined) {
-                                const G = 6.67430e-11;
-                                const M_sun = 1.98847e30;
-                                const R_sun = 6.957e8;
-                                const c = 2.99792458e8;
-                                const M_kg = row.mass * M_sun;
-                                const R_m = row.solarRadius * R_sun;
-                                compactness = (G * M_kg) / (R_m * c * c);
-                            }
-                            
-                            return {
-                                ...row,
-                                solarRadius: radiusKm,  // Convert to km
-                                tangentialVelocity: tangVel,
-                                periodDerivative: periodDerivative,
-                                compactness: compactness
-                            };
-                        });
-                        
-                        // Return full processed rows with pre-computed hover text
-                        self.postMessage({ type: 'processed', data: processed, id: id });
+                        const CHUNK_SIZE = 10000;
+                        const processed = [];
+                        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+                            const chunk = data.slice(i, i + CHUNK_SIZE).map(row => {
+                                const radiusKm = row.solarRadius * 696000;
+                                const periodSeconds = row.rotationalPeriod * 86400;
+                                const tangVel = (2 * Math.PI * radiusKm) / periodSeconds;
+                                const ageSeconds = row.age * 1e6 * 365.25 * 86400;
+                                const periodDerivative = periodSeconds / (2 * ageSeconds);
+                                let compactness = null;
+                                if (row.mass !== null && row.mass !== undefined) {
+                                    const G = 6.67430e-11;
+                                    const M_sun = 1.98847e30;
+                                    const R_sun = 6.957e8;
+                                    const c = 2.99792458e8;
+                                    const M_kg = row.mass * M_sun;
+                                    const R_m = row.solarRadius * R_sun;
+                                    compactness = (G * M_kg) / (R_m * c * c);
+                                }
+                                return {
+                                    ...row,
+                                    solarRadius: radiusKm,
+                                    tangentialVelocity: tangVel,
+                                    periodDerivative: periodDerivative,
+                                    compactness: compactness
+                                };
+                            });
+                            self.postMessage({ type: 'processed-chunk', data: chunk, id: id, done: (i + CHUNK_SIZE >= data.length) });
+                        }
                     }
                 };
             `;
@@ -649,7 +572,18 @@
         function processWithWorker(data, fields) {
             return new Promise((resolve) => {
                 const id = workerMessageId++;
-                workerCallbacks.set(id, resolve);
+                let allData = [];
+                function handleChunk(e) {
+                    const { type, data, id: msgId, done } = e.data;
+                    if (type === 'processed-chunk' && msgId === id) {
+                        allData = allData.concat(data);
+                        if (done) {
+                            dataWorker.removeEventListener('message', handleChunk);
+                            resolve(allData);
+                        }
+                    }
+                }
+                dataWorker.addEventListener('message', handleChunk);
                 dataWorker.postMessage({
                     type: 'process',
                     data: data,
