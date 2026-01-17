@@ -1283,7 +1283,7 @@
                         opacity: 0.7
                     },
                     text: textData,
-                    hoverinfo: 'text',
+                    hovertemplate: '%{text}<extra></extra>',
                     customdata: sampledData.map(r => r.system)
                 }], {
                     title: 'Tangential Velocity vs Half Angle',
@@ -1494,7 +1494,7 @@
                             opacity: 0.6
                         },
                         text: textData,
-                        hoverinfo: 'text'
+                        hovertemplate: '%{text}<extra></extra>'
                     });
                 }
 
@@ -2629,7 +2629,7 @@
                     yData[i] = plotData[i][yField];
                     colorData[i] = plotData[i][colorField];
                     systemData[i] = plotData[i].system;
-                    textData[i] = plotData[i].hoverText;
+                    textData[i] = plotData[i].hoverText || formatHoverTextForRow(plotData[i]);
                 }
 
                 // Check if this plot needs separate spin state traces
@@ -2655,7 +2655,7 @@
 
                         const spinXData = spinData.map(r => r[xField]);
                         const spinYData = spinData.map(r => r[yField]);
-                        const spinTextData = spinData.map(r => r.hoverText);
+                        const spinTextData = spinData.map(r => r.hoverText || formatHoverTextForRow(r));
                         const spinSystemData = spinData.map(r => r.system);
 
                         traces.push({
@@ -2671,7 +2671,7 @@
                             },
                             customdata: spinSystemData,
                             text: spinTextData,
-                            hoverinfo: 'text',
+                            hovertemplate: '%{text}<extra></extra>',
                             legendgroup: spinState.value,
                             showlegend: true
                         });
@@ -2697,7 +2697,7 @@
                         },
                         customdata: systemData,
                         text: textData,
-                        hoverinfo: 'text'
+                        hovertemplate: '%{text}<extra></extra>'
                     };
                     traces.push(trace);
                 }
