@@ -165,7 +165,7 @@
 <body>
     <div class="header">
         <h1>Neutron Star Analysis</h1>
-        <div class="subtitle">Interactive controls: zoom, pan, box select | Data loads on-demand with streaming | Add ?region=RegionName to URL to filter by region</div>
+        <div class="subtitle">Interactive controls: zoom, pan, box select | Data loads on-demand with streaming | Add ?region=RegionName or ?coords=x,y,z&distance=4000 to URL to filter</div>
     </div>
 
     <div class="tabs">
@@ -934,9 +934,24 @@
         // Get URL parameters
         function getURLParams() {
             const params = new URLSearchParams(window.location.search);
+            const coords = params.get('coords');
+            let coordsArray = null;
+            if (coords) {
+                const parts = coords.split(',').map(s => parseFloat(s.trim()));
+                if (parts.length === 3 && parts.every(n => !isNaN(n))) {
+                    coordsArray = parts;
+                }
+            }
             return {
-                region: params.get('region')
+                region: params.get('region'),
+                coords: coordsArray,
+                distance: params.get('distance') ? parseFloat(params.get('distance')) : null
             };
+        }
+
+        // Calculate 3D distance between two points
+        function calculateDistance(x1, y1, z1, x2, y2, z2) {
+            return Math.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2);
         }
 
         async function loadCSVStreaming(onProgress) {
@@ -964,10 +979,16 @@
             // Check for region filter from URL
             const urlParams = getURLParams();
             const regionFilter = urlParams.region;
+            const coordsFilter = urlParams.coords;
+            const distanceFilter = urlParams.distance;
             
             if (regionFilter) {
                 console.log('[CSV] Region filter detected:', regionFilter);
-            } else {
+            }
+            if (coordsFilter && distanceFilter) {
+                console.log('[CSV] Coordinate filter detected:', coordsFilter, 'within', distanceFilter, 'ly');
+            }
+            if (!regionFilter && !coordsFilter) {
                 console.log('[CSV] Loading all region files...');
             }
 
@@ -1052,7 +1073,16 @@
                                     } else {
                                         const row = parseCSVLine(line, fileHeaders);
                                         row.region = regionName; // Add region name to each row
-                                        csvData.push(row);
+                                        
+                                        // Apply coordinate filter if specified
+                                        if (coordsFilter && distanceFilter && row.x !== undefined && row.y !== undefined && row.z !== undefined) {
+                                            const distance = calculateDistance(coordsFilter[0], coordsFilter[1], coordsFilter[2], row.x, row.y, row.z);
+                                            if (distance <= distanceFilter) {
+                                                csvData.push(row);
+                                            }
+                                        } else if (!coordsFilter) {
+                                            csvData.push(row);
+                                        }
                                     }
                                 }
                             }
@@ -1060,7 +1090,16 @@
                             if (buffer.trim() && headersParsed) {
                                 const row = parseCSVLine(buffer.trim(), fileHeaders);
                                 row.region = regionName; // Add region name to each row
-                                csvData.push(row);
+                                
+                                // Apply coordinate filter if specified
+                                if (coordsFilter && distanceFilter && row.x !== undefined && row.y !== undefined && row.z !== undefined) {
+                                    const distance = calculateDistance(coordsFilter[0], coordsFilter[1], coordsFilter[2], row.x, row.y, row.z);
+                                    if (distance <= distanceFilter) {
+                                        csvData.push(row);
+                                    }
+                                } else if (!coordsFilter) {
+                                    csvData.push(row);
+                                }
                             }
 
                             const rowsAdded = csvData.length - rowsBefore;
