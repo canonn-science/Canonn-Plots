@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Jet Prediction</title>
+</head>
+<body>
+    <h1>Jet Prediction Test</h1>
+    <div id="output"></div>
+    
+    <script src="predict-jet.js"></script>
+    <script>
+        console.log('Testing jet prediction function...');
+        
+        const body = {
+            massSolar: 1.5,          // 1.5 solar masses
+            radiusSolar: 0.012,      // 0.012 solar radii (~neutron star)
+            rotationalPeriodDays: 0.002 // 0.002 days (~3 minutes)
+        };
+        
+        const result = predictJet(body);
+        console.log(`Predicted jet height: ${result.jetHeightLs.toFixed(2)} Ls`);
+        console.log(`Predicted half-angle: ${result.halfAngleDeg.toFixed(1)}°`);
+        
+        document.getElementById('output').innerHTML = `
+            <p>Test completed successfully!</p>
+            <p>Predicted jet height: ${result.jetHeightLs.toFixed(2)} Ls</p>
+            <p>Predicted half-angle: ${result.halfAngleDeg.toFixed(1)}°</p>
+        `;
+        
+        // Test with individual parameters too
+        const result2 = predictJet(1.5, 0.012, 0.002);
+        console.log(`Individual params - Jet height: ${result2.jetHeightLs.toFixed(2)} Ls, Half angle: ${result2.halfAngleDeg.toFixed(1)}°`);
+    </script>
+</body>
+</html>

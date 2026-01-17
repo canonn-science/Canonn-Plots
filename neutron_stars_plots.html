@@ -165,7 +165,7 @@
 <body>
     <div class="header">
         <h1>Neutron Star Analysis</h1>
-        <div class="subtitle">Interactive controls: zoom, pan, box select | Data loads on-demand with streaming</div>
+        <div class="subtitle">Interactive controls: zoom, pan, box select | Data loads on-demand with streaming | Add ?region=RegionName to URL to filter by region</div>
     </div>
 
     <div class="tabs">
@@ -186,6 +186,7 @@
         <button class="tab" onclick="showTab(14)">Neutron Age by Region</button>
         <button class="tab" onclick="showTab(15)">Stellar Age by Region</button>
         <button class="tab" onclick="showTab(16)">Histograms</button>
+        <button class="tab" onclick="showTab(17)">Jet Radius vs Half Angle</button>
     </div>
 
     <div id="tab0" class="tab-content active">
@@ -395,6 +396,16 @@
         <div class="loading" id="loading-16"></div>
     </div>
 
+    <div id="tab17" class="tab-content">
+        <div class="help"><strong>Jet Radius vs Half Angle:</strong> Each point is a neutron star, calculated using the
+            jet prediction model. X = Half Angle (deg), Y = Jet Radius (Ls). Hover for details.</div>
+        <div class="plot-container">
+            <div id="plot-17" style="width:100%;height:700px;"></div>
+            <div class="loading" id="loading-17"></div>
+        </div>
+    </div>
+
+    <script src="predict-jet.js"></script>
     <script>
         const REGION_MAP_PATH = 'EliteDangerousRegionMap/RegionMapData.json';
         const INITIAL_CHUNK_SIZE = 50000;
@@ -920,6 +931,14 @@
             }
         }
 
+        // Get URL parameters
+        function getURLParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                region: params.get('region')
+            };
+        }
+
         async function loadCSVStreaming(onProgress) {
             // If already complete, return immediately
             if (csvComplete && csvData.length > 0) {
@@ -942,15 +961,48 @@
             // Load region map first
             await loadRegionMap();
 
-            console.log('[CSV] Loading region files...');
+            // Check for region filter from URL
+            const urlParams = getURLParams();
+            const regionFilter = urlParams.region;
+            
+            if (regionFilter) {
+                console.log('[CSV] Region filter detected:', regionFilter);
+            } else {
+                console.log('[CSV] Loading all region files...');
+            }
 
             csvLoadPromise = (async () => {
                 try {
                     let filesLoaded = 0;
                     let filesSkipped = 0;
+                    let regionsToLoad = [];
 
-                    // Load each region file (regions 1-42)
-                    for (let regionId = 1; regionId <= 42; regionId++) {
+                    // Determine which regions to load
+                    if (regionFilter) {
+                        // Find region ID by name (case-insensitive)
+                        let targetRegionId = null;
+                        for (let id = 1; id <= 42; id++) {
+                            const regionName = regionMap[id];
+                            if (regionName && regionName.toLowerCase() === regionFilter.toLowerCase()) {
+                                targetRegionId = id;
+                                break;
+                            }
+                        }
+                        
+                        if (targetRegionId) {
+                            regionsToLoad = [targetRegionId];
+                            console.log('[CSV] Loading single region:', regionMap[targetRegionId], '(ID:', targetRegionId, ')');
+                        } else {
+                            console.warn('[CSV] Region not found:', regionFilter, '- loading all regions');
+                            regionsToLoad = Array.from({length: 42}, (_, i) => i + 1);
+                        }
+                    } else {
+                        // Load all regions
+                        regionsToLoad = Array.from({length: 42}, (_, i) => i + 1);
+                    }
+
+                    // Load each region file
+                    for (const regionId of regionsToLoad) {
                         const regionName = regionMap[regionId] || 'Region ' + regionId;
                         const paddedId = regionId.toString().padStart(2, '0');
                         const filePath = 'Region_' + paddedId + '.csv.gz';
@@ -1021,7 +1073,11 @@
                         }
                     }
 
-                    console.log('[CSV] Complete! Loaded ' + filesLoaded + ' files, skipped ' + filesSkipped + ' files. Total rows: ' + csvData.length.toLocaleString());
+                    const loadMessage = regionFilter ? 
+                        `Complete! Loaded ${filesLoaded} files from region "${regionFilter}", skipped ${filesSkipped} files. Total rows: ${csvData.length.toLocaleString()}` :
+                        `Complete! Loaded ${filesLoaded} files, skipped ${filesSkipped} files. Total rows: ${csvData.length.toLocaleString()}`;
+                    
+                    console.log('[CSV]', loadMessage);
                     csvComplete = true;
                     csvLoading = false;
                     if (onProgress) onProgress(csvData.length, true, null);
@@ -1061,6 +1117,8 @@
                     loadStellarAgeByRegion(index);
                 } else if (index === 16) {
                     loadHistograms(index);
+                } else if (index === 17) {
+                    loadJetRadiusVsHalfAngle(index);
                 } else {
                     loadAndStreamData(index);
                 }
@@ -1074,6 +1132,208 @@
                 }
             }
         }
+
+        // Jet Radius vs Half Angle plot loader
+        async function loadJetRadiusVsHalfAngle(tabIndex) {
+            const loadingDiv = document.getElementById('loading-' + tabIndex);
+            const plotDiv = document.getElementById('plot-' + tabIndex);
+            loadingDiv.innerHTML = '<div class="spinner"></div>Waiting for complete dataset...';
+
+            // Wait a moment for tab to fully render
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                // Get initial data
+                const data = await loadCSVStreaming();
+                if (!data) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading CSV</div>';
+                    return;
+                }
+
+                // Wait for CSV to completely load
+                while (!csvComplete) {
+                    loadingDiv.innerHTML = '<div class="spinner"></div>Loading data... ' + csvData.length.toLocaleString() + ' rows loaded';
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+
+                loadingDiv.innerHTML = '<div class="spinner"></div>Processing ' + csvData.length.toLocaleString() + ' data points...';
+
+                // Test the jet prediction function
+                try {
+                    const testBody = {
+                        massSolar: 1.5,
+                        radiusSolar: 0.012,
+                        rotationalPeriodDays: 0.002
+                    };
+                    const testResult = predictJet(testBody);
+                } catch (testError) {
+                    console.error('[loadJetRadiusVsHalfAngle] Test failed:', testError);
+                }
+
+                // Process ALL data at once
+                const processedData = await processWithWorker(csvData, null);
+
+                // Compute halfAngleDeg for each row
+                const jetData = processedData.map((r) => {
+                    if (r.mass !== undefined && r.solarRadius !== undefined && r.rotationalPeriod !== undefined) {
+                        const radiusInSolarRadii = r.solarRadius / 696000;
+                        const jet = predictJet(r.mass, radiusInSolarRadii, r.rotationalPeriod);
+                        return {
+                            ...r,
+                            halfAngleDeg: jet.halfAngleDeg
+                        };
+                    } else {
+                        return null;
+                    }
+                }).filter(Boolean);
+
+                // Filter to valid data
+                const validData = jetData.filter(r =>
+                    r.tangentialVelocity !== undefined && r.halfAngleDeg !== undefined &&
+                    isFinite(r.tangentialVelocity) && isFinite(r.halfAngleDeg)
+                );
+                
+                if (validData.length === 0) {
+                    loadingDiv.innerHTML = '<div style="color: #f44336;">No valid data could be calculated</div>';
+                    return;
+                }
+
+                // Downsample for performance
+                let sampledData, allDataForZoom = null;
+                if (validData.length > 50000) {
+                    sampledData = downsampleForDisplay(validData, 'tangentialVelocity', 'halfAngleDeg', 'mass', 800);
+                    allDataForZoom = validData; // Store full data for zoom interactions
+                } else {
+                    sampledData = validData;
+                }
+
+                // Prepare arrays
+                const xData = sampledData.map(r => r.tangentialVelocity);
+                const yData = sampledData.map(r => r.halfAngleDeg);
+                const colorData = sampledData.map(r => r.mass);
+                const textData = sampledData.map(r => {
+                    let hover = `<b>${r.system || ''}</b>`;
+                    hover += `<br>Tangential Velocity: ${r.tangentialVelocity.toFixed(1)} km/s`;
+                    hover += `<br>Half Angle: ${r.halfAngleDeg.toFixed(2)}°`;
+                    if (r.mass !== undefined) hover += `<br>Mass: ${r.mass.toFixed(3)} M☉`;
+                    if (r.solarRadius !== undefined) hover += `<br>Radius: ${r.solarRadius.toLocaleString()} km`;
+                    if (r.rotationalPeriod !== undefined) hover += `<br>Period: ${r.rotationalPeriod.toFixed(4)} d`;
+                    if (r.age !== undefined) hover += `<br>Age: ${r.age.toLocaleString()} Myr`;
+                    return hover;
+                });
+
+                // Plotly scatter plot
+                plotDiv.style.display = 'none';
+                loadingDiv.innerHTML = '<div class="spinner"></div>Rendering chart...';
+                await new Promise(resolve => requestAnimationFrame(resolve));
+
+                await Plotly.newPlot(plotDiv, [{
+                    x: xData,
+                    y: yData,
+                    mode: 'markers',
+                    type: 'scattergl',
+                    marker: {
+                        size: 4,
+                        color: colorData,
+                        colorscale: 'Viridis',
+                        colorbar: {
+                            title: 'Mass (M☉)',
+                            titlefont: { color: '#fff' },
+                            tickfont: { color: '#fff' }
+                        },
+                        opacity: 0.7
+                    },
+                    text: textData,
+                    hoverinfo: 'text',
+                    customdata: sampledData.map(r => r.system)
+                }], {
+                    title: 'Tangential Velocity vs Half Angle',
+                    xaxis: { title: 'Tangential Velocity (km/s)', gridcolor: '#333' },
+                    yaxis: { title: 'Jet Half Angle (deg)', gridcolor: '#333' },
+                    paper_bgcolor: '#1a1a1a',
+                    plot_bgcolor: '#1a1a1a',
+                    font: { color: '#fff' },
+                    hovermode: 'closest',
+                    autosize: true,
+                    height: 700,
+                    margin: { l: 80, r: 80, t: 80, b: 80 }
+                }, {
+                    responsive: true,
+                    displayModeBar: true
+                });
+
+                plotDiv.style.display = 'block';
+                Plotly.Plots.resize(plotDiv);
+
+                // Add zoom handler for dynamic resampling
+                if (allDataForZoom) {
+                    let zoomTimeout = null;
+                    let loadingOverlay = null;
+                    const originalData = { x: [...xData], y: [...yData], color: [...colorData], text: [...textData], customdata: [...sampledData.map(r => r.system)] };
+
+                    plotDiv.on('plotly_relayout', function (eventData) {
+                        if (eventData['xaxis.autorange'] || eventData['yaxis.autorange']) {
+                            if (zoomTimeout) clearTimeout(zoomTimeout);
+                            Plotly.restyle(plotDiv, {
+                                x: [originalData.x], y: [originalData.y], 'marker.color': [originalData.color],
+                                text: [originalData.text], customdata: [originalData.customdata]
+                            }, 0);
+                            return;
+                        }
+                        if (!eventData['xaxis.range[0]'] && !eventData['xaxis.range']) return;
+                        if (zoomTimeout) clearTimeout(zoomTimeout);
+                        if (!loadingOverlay) {
+                            loadingOverlay = document.createElement('div');
+                            loadingOverlay.className = 'loading-overlay';
+                            loadingOverlay.innerHTML = '<div class="spinner"></div><div class="message">Loading more data...</div>';
+                            plotDiv.parentElement.style.position = 'relative';
+                            plotDiv.parentElement.appendChild(loadingOverlay);
+                        }
+                        loadingOverlay.style.display = 'flex';
+                        zoomTimeout = setTimeout(async function () {
+                            const xRange = eventData['xaxis.range[0]'] !== undefined ? [eventData['xaxis.range[0]'], eventData['xaxis.range[1]']] : eventData['xaxis.range'];
+                            const yRange = eventData['yaxis.range[0]'] !== undefined ? [eventData['yaxis.range[0]'], eventData['yaxis.range[1]']] : eventData['yaxis.range'];
+                            if (!xRange || !yRange) { loadingOverlay.style.display = 'none'; return; }
+                            const visibleData = allDataForZoom.filter(r => r.tangentialVelocity >= xRange[0] && r.tangentialVelocity <= xRange[1] && r.halfAngleDeg >= yRange[0] && r.halfAngleDeg <= yRange[1]);
+                            const resampledData = downsampleForDisplay(visibleData, 'tangentialVelocity', 'halfAngleDeg', 'mass', 1000);
+                            const newXData = resampledData.map(r => r.tangentialVelocity);
+                            const newYData = resampledData.map(r => r.halfAngleDeg);
+                            const newColorData = resampledData.map(r => r.mass);
+                            const newTextData = resampledData.map(r => {
+                                let hover = `<b>${r.system || ''}</b>`;
+                                hover += `<br>Tangential Velocity: ${r.tangentialVelocity.toFixed(1)} km/s`;
+                                hover += `<br>Half Angle: ${r.halfAngleDeg.toFixed(2)}°`;
+                                if (r.mass !== undefined) hover += `<br>Mass: ${r.mass.toFixed(3)} M☉`;
+                                return hover;
+                            });
+                            await Plotly.restyle(plotDiv, {
+                                x: [newXData], y: [newYData], 'marker.color': [newColorData],
+                                text: [newTextData], customdata: [resampledData.map(r => r.system)]
+                            }, 0);
+                            loadingOverlay.style.display = 'none';
+                        }, 500);
+                    });
+                }
+
+                // Add click handler for navigation to Canonn signals
+                plotDiv.on('plotly_click', function (data) {
+                    const point = data.points[0];
+                    if (point && point.customdata) {
+                        const systemName = point.customdata;
+                        const url = 'https://signals.canonn.tech/?system=' + encodeURIComponent(systemName);
+                        window.open(url, '_blank');
+                    }
+                });
+
+                loadingDiv.innerHTML = '<div style="color: #4a9eff; font-weight: 500;">✓ Loaded ' + validData.length.toLocaleString() + ' data points | Click any point to view details</div>';
+                loadedTabs.add(tabIndex);
+
+            } catch (error) {
+                console.error('[Jet Radius vs Half Angle] Error:', error);
+                loadingDiv.innerHTML = '<div style="color: #f44336;">Error loading plot: ' + error.message + '</div>';
+            }
+        }
+
 
         async function loadMassRadiusByAgeGroups(tabIndex) {
             const loadingDiv = document.getElementById('loading-12b');
